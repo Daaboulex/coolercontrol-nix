@@ -1,0 +1,64 @@
+name: Check upstream CoolerControl
+
+on:
+  schedule:
+    - cron: '0 12 * * 1,4' # Monday and Thursday 12:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current version
+        id: current
+        run: |
+          VERSION=$(grep -oP 'version = "[^"]+"' flake.nix | head -1 | sed 's/version = "//;s/"//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get latest upstream release
+        id: upstream
+        run: |
+          LATEST=$(curl -sf "https://gitlab.com/api/v4/projects/coolercontrol%2Fcoolercontrol/repository/tags?per_page=1" | jq -r '.[0].name')
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Check if update needed
+        id: check
+        run: |
+          if [ "${{ steps.current.outputs.version }}" = "${{ steps.upstream.outputs.version }}" ]; then
+            echo "needed=false" >> $GITHUB_OUTPUT
+            echo "Already up to date at v${{ steps.current.outputs.version }}"
+          else
+            echo "needed=true" >> $GITHUB_OUTPUT
+            echo "Update available: ${{ steps.current.outputs.version }} -> ${{ steps.upstream.outputs.version }}"
+          fi
+
+      - name: Create issue for update
+        if: steps.check.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if issue already exists
+          EXISTING=$(gh issue list --search "Update to v${{ steps.upstream.outputs.version }}" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already exists"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Update CoolerControl to v${{ steps.upstream.outputs.version }}" \
+            --body "$(cat <<'EOF'
+          New upstream release detected.
+
+          - Current: v${{ steps.current.outputs.version }}
+          - Latest: v${{ steps.upstream.outputs.version }}
+          - [Release notes](https://gitlab.com/coolercontrol/coolercontrol/-/releases/v${{ steps.upstream.outputs.version }})
+
+          **Manual update required:** Update version, rebuild hashes (cargoHash, npmDepsHash, src hash), and test build.
+          EOF
+          )"
