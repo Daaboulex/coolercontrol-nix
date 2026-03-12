@@ -73,7 +73,27 @@ CoolerControl detects and controls devices through:
 - **libdrm** — AMD GPU temperature and fan control
 - **NVML** — NVIDIA GPU monitoring (auto-loaded via `addDriverRunpath`)
 
-No additional kernel modules or udev rules needed — the daemon runs as root and has full hardware access.
+### Kernel modules for motherboard fan control
+
+CoolerControl can only see fans exposed by loaded hwmon drivers. GPU fans (amdgpu/nvidia) are auto-detected, but **motherboard fan headers require the appropriate Super I/O kernel module** to be loaded. Without it, CoolerControl will only show GPU fans.
+
+Most motherboards use a Nuvoton or ITE Super I/O chip. Add the correct module to your NixOS config:
+
+```nix
+# Nuvoton (most ASUS, MSI, Gigabyte boards — NCT6775/6776/6779/6791/6796/6798/6799)
+boot.kernelModules = [ "nct6775" ];
+
+# ITE (some Gigabyte, ASRock boards — IT8688E, IT8689E, etc.)
+boot.kernelModules = [ "it87" ];
+```
+
+You may also need this kernel parameter for ASUS boards (allows the driver to access ACPI-claimed I/O ports):
+
+```nix
+boot.kernelParams = [ "acpi_enforce_resources=lax" ];
+```
+
+To identify your chip, run `sudo modprobe nct6775 && sensors` or `sudo modprobe it87 && sensors` and check which one exposes fan readings. See the [CoolerControl hardware support docs](https://docs.coolercontrol.org/hardware-support.html) for details.
 
 ## Verification
 

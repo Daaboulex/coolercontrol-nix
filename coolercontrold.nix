@@ -7,6 +7,8 @@
   python3Packages,
   liquidctl,
   protobuf,
+  kmod,
+  hwdata,
   coolercontrol-ui-data,
   version,
   src,
@@ -48,7 +50,8 @@ rustPlatform.buildRustPackage {
 
     buildPythonPath "''${pythonPath[*]}"
     wrapProgram "$out/bin/coolercontrold" \
-      --prefix PATH : $program_PATH \
+      --prefix PATH : ${lib.makeBinPath [ kmod ]}:$program_PATH \
+      --set HWDATA_PATH "${hwdata}/share/hwdata" \
       --prefix PYTHONPATH : $program_PYTHONPATH
   '';
 
