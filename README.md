@@ -49,7 +49,7 @@ imports = [
 programs.coolercontrol.enable = true;
 ```
 
-## Module Options
+## NixOS module options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
@@ -63,6 +63,7 @@ programs.coolercontrol.enable = true;
 - **Desktop app**: `coolercontrol` binary with `.desktop` file and icons — launch from your application menu
 - **Web UI**: Available at `https://localhost:11987` (TLS enabled by default in v4.0+)
 - **GPU driver access**: `addDriverRunpath` ensures the daemon can detect NVIDIA/AMD GPUs at runtime
+- **PCI device names**: `hwdata` is patched into the vendored `pciid-parser` crate at build time so the daemon can resolve PCI IDs to human-readable device names on NixOS
 
 ## Hardware support
 
@@ -165,11 +166,8 @@ Declaratively configure CoolerControl profiles, functions, modes, alerts, and se
 ### Import
 
 ```nix
-# flake.nix
-inputs.coolercontrol.url = "github:daaboulex/coolercontrol-nix";
-
-# home configuration
-imports = [
+# In your flake, add to Home Manager sharedModules:
+home-manager.sharedModules = [
   inputs.coolercontrol.homeManagerModules.default
 ];
 ```
@@ -180,6 +178,10 @@ imports = [
 programs.coolercontrol = {
   enable = true;
 
+  # Connect to daemon (HTTPS with self-signed cert by default)
+  url = "https://localhost:11987";
+
+  # Fan curve profiles
   profiles.silent = {
     uid = "abc123";  # from coolerctl profiles list
     name = "Silent";
@@ -197,19 +199,22 @@ programs.coolercontrol = {
       { temp = 70; duty = 70; }
       { temp = 85; duty = 100; }
     ];
+    extra.function_uid = "ghi789";
   };
 
+  # Response functions — control how profiles react to temperature changes
   functions.smooth = {
     uid = "ghi789";
     name = "Smooth Response";
     duty_minimum = 20;
     duty_maximum = 100;
-    response_delay = 3;
-    deviance = 2.0;
-    only_downward = true;
-    sample_window = 6;
+    response_delay = 3;     # seconds before reacting
+    deviance = 2;            # °C hysteresis
+    only_downward = false;   # allow speed increases
+    sample_window = 6;       # average temps over N seconds
   };
 
+  # Modes — assign profiles to specific device channels
   modes.default = {
     uid = "jkl012";
     name = "Default Mode";
@@ -220,17 +225,31 @@ programs.coolercontrol = {
     };
   };
 
+  # Activate a mode on login
   activeMode = "jkl012";
 
-  settings = {
-    apply_on_boot = true;
-    handle_dynamic_temps = true;
-    startup_delay = 2;
-  };
-
+  # Temperature alerts
   alerts = [
     { channel = "CPU"; threshold_celsius = 95; trigger = "above"; }
   ];
+
+  # Global daemon settings (all 11 fields)
+  settings = {
+    apply_on_boot = true;          # re-apply profiles on boot
+    no_init = false;               # skip device init (debugging only)
+    startup_delay = 2;             # seconds to wait before applying
+    thinkpad_full_speed = false;   # ThinkPad fan override
+    handle_dynamic_temps = false;  # handle hotplug temp sources
+    liquidctl_integration = true;  # enable liquidctl for AIOs
+    hide_duplicate_devices = true; # hide duplicate device entries
+    compress = true;               # compress API responses
+    poll_rate = 1.0;               # sensor poll interval (0.5-5.0s)
+    drivetemp_suspend = true;      # skip drivetemp when drive sleeping
+    allow_unencrypted = false;     # require HTTPS
+  };
+
+  # Additional commands after config is applied
+  extraCommands = [ ];
 };
 ```
 
@@ -245,7 +264,7 @@ Use `export-config.sh` to snapshot the daemon's current state as a Nix attrset:
 ./export-config.sh
 
 # Export from a remote instance
-./export-config.sh --url http://192.168.1.100:11987
+./export-config.sh --url https://192.168.1.100:11987
 
 # With authentication
 ./export-config.sh --token <bearer-token>
@@ -254,19 +273,86 @@ COOLERCONTROL_TOKEN=xxx ./export-config.sh
 
 The output documents all devices, profiles, functions, modes, alerts, custom sensors, and global settings. Use it as a reference when writing your Home Manager configuration — copy UIDs and settings from the export.
 
-## Home Manager options
+## Home Manager options reference
+
+### Top-level options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `programs.coolercontrol.enable` | bool | `false` | Enable declarative CoolerControl configuration |
-| `programs.coolercontrol.url` | str | `"http://localhost:11987"` | Daemon URL |
-| `programs.coolercontrol.profiles` | attrsOf submodule | `{}` | Fan curve profiles (uid, name, p_type, speed_fixed/speed_profile) |
-| `programs.coolercontrol.functions` | attrsOf submodule | `{}` | Function definitions (uid, name, duty_minimum, duty_maximum, response_delay, deviance, only_downward, sample_window) |
-| `programs.coolercontrol.modes` | attrsOf submodule | `{}` | Mode definitions (uid, name, device_settings) |
-| `programs.coolercontrol.activeMode` | nullOr str | `null` | Mode UID to activate on login |
-| `programs.coolercontrol.alerts` | listOf submodule | `[]` | Alert definitions (channel, threshold_celsius, trigger) |
-| `programs.coolercontrol.settings` | nullOr submodule | `null` | Global daemon settings (apply_on_boot, thinkpad_full_speed, handle_dynamic_temps, startup_delay) |
-| `programs.coolercontrol.extraCommands` | listOf str | `[]` | Additional shell commands to run after applying configuration |
+| `enable` | bool | `false` | Enable declarative CoolerControl configuration |
+| `url` | str | `"https://localhost:11987"` | Daemon HTTPS endpoint |
+| `profiles` | attrsOf submodule | `{}` | Fan curve profiles |
+| `functions` | attrsOf submodule | `{}` | Response function definitions |
+| `modes` | attrsOf submodule | `{}` | Device-channel-profile assignments |
+| `activeMode` | nullOr str | `null` | Mode UID to activate on login |
+| `alerts` | listOf submodule | `[]` | Temperature threshold alerts |
+| `settings` | nullOr submodule | `null` | Global daemon settings |
+| `extraCommands` | listOf str | `[]` | Additional commands after applying config |
+
+### Profile submodule
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `uid` | str | — | Daemon-assigned UUID |
+| `name` | str | — | Display name |
+| `p_type` | str | — | Profile type: `"Default"`, `"Fixed"`, `"Graph"`, `"Mix"` |
+| `speed_fixed` | int | `0` | Fixed duty percentage (for `"Fixed"` type) |
+| `speed_profile` | listOf {temp, duty} | `[]` | Temperature curve points (for `"Graph"` type) |
+| `extra` | attrs | `{}` | Additional fields (e.g. `function_uid`) |
+
+### Function submodule
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `uid` | str | — | Daemon-assigned UUID |
+| `name` | str | — | Display name |
+| `duty_minimum` | int | `0` | Minimum fan duty % |
+| `duty_maximum` | int | `100` | Maximum fan duty % |
+| `response_delay` | int | `0` | Seconds before responding to temp change |
+| `deviance` | int | `0` | Temperature hysteresis in °C |
+| `only_downward` | bool | `false` | Only allow downward speed changes |
+| `sample_window` | int | `0` | Temperature averaging window in seconds |
+| `extra` | attrs | `{}` | Additional fields |
+
+### Mode submodule
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `uid` | str | — | Daemon-assigned UUID |
+| `name` | str | — | Display name |
+| `device_settings` | attrsOf (attrsOf attrs) | `{}` | Device UID → channel → profile assignment |
+| `extra` | attrs | `{}` | Additional fields |
+
+### Alert submodule
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `channel` | str | — | Temperature source channel name |
+| `threshold_celsius` | int | — | Trigger temperature in °C |
+| `trigger` | str | `"above"` | Trigger direction: `"above"` or `"below"` |
+| `extra` | attrs | `{}` | Additional fields |
+
+### Settings submodule
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `apply_on_boot` | bool | `true` | Re-apply profiles/modes on system boot |
+| `no_init` | bool | `false` | Skip device initialisation on daemon start |
+| `startup_delay` | int | `2` | Seconds to wait after boot before applying |
+| `thinkpad_full_speed` | bool | `false` | Allow fans to exceed firmware limits (ThinkPad only) |
+| `handle_dynamic_temps` | bool | `false` | Handle dynamically appearing temp sources |
+| `liquidctl_integration` | bool | `true` | Enable liquidctl for AIO coolers |
+| `hide_duplicate_devices` | bool | `true` | Hide duplicate device entries |
+| `compress` | bool | `true` | Compress API responses |
+| `poll_rate` | float | `1.0` | Sensor polling interval in seconds (0.5-5.0) |
+| `drivetemp_suspend` | bool | `true` | Suspend drivetemp monitoring during disk sleep |
+| `allow_unencrypted` | bool | `false` | Allow unencrypted HTTP connections |
+
+## NixOS-specific patches
+
+### PCI ID database
+
+The upstream `pciid-parser` Rust crate hardcodes Linux FHS paths (`/usr/share/hwdata/pci.ids`) which don't exist on NixOS. This flake patches the vendored crate at build time to substitute the `@hwdata@` placeholder with the Nix store path to `hwdata`, enabling proper PCI device name resolution.
 
 ## Version tracking
 

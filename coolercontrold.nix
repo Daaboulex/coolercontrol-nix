@@ -37,6 +37,13 @@ rustPlatform.buildRustPackage {
 
     substituteInPlace daemon/src/repositories/utils.rs \
       --replace-fail 'Command::new("sh")' 'Command::new("${runtimeShell}")'
+
+    # Patch the vendored pciid-parser crate to use the Nix store hwdata path.
+    # The crate has a @hwdata@ placeholder designed for build-time substitution
+    # but nobody substitutes it — so pci.ids lookup fails on NixOS.
+    # $cargoDepsCopy is set by cargoSetupPostUnpackHook during the unpack phase.
+    substituteInPlace "$cargoDepsCopy/pciid-parser-0.8.0/src/lib.rs" \
+      --replace-fail '@hwdata@' '${hwdata}'
   '';
 
   postInstall = ''
@@ -51,7 +58,6 @@ rustPlatform.buildRustPackage {
     buildPythonPath "''${pythonPath[*]}"
     wrapProgram "$out/bin/coolercontrold" \
       --prefix PATH : ${lib.makeBinPath [ kmod ]}:$program_PATH \
-      --set HWDATA_PATH "${hwdata}/share/hwdata" \
       --prefix PYTHONPATH : $program_PYTHONPATH
   '';
 
