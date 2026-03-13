@@ -17,7 +17,7 @@ set -euo pipefail
 URL="https://localhost:11987"
 TOKEN="${COOLERCONTROL_TOKEN:-}"
 PASSWORD="${COOLERCONTROL_PASSWORD:-}"
-SESSION_COOKIE=""
+COOKIE_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,25 +56,31 @@ done
 # Strip trailing slash
 URL="${URL%/}"
 
+# Cleanup temp files on exit
+cleanup() {
+  [[ -n $COOKIE_FILE && -f $COOKIE_FILE ]] && rm -f "$COOKIE_FILE"
+}
+trap cleanup EXIT
+
 # Perform basic auth login if password provided (and no token)
 if [[ -z $TOKEN && -n $PASSWORD ]]; then
+  COOKIE_FILE=$(mktemp)
   BASIC_CREDS=$(printf 'CCAdmin:%s' "$PASSWORD" | base64 -w0)
-  login_response=$(curl -sk -w '\n%{http_code}' -X POST \
+  login_status=$(curl -sk -o /dev/null -w '%{http_code}' \
+    -X POST \
     -H "Authorization: Basic $BASIC_CREDS" \
-    -c - \
+    -c "$COOKIE_FILE" \
     "${URL}/login" 2>/dev/null) || {
-    echo "# ERROR: Failed to login to ${URL}" >&2
+    echo "# ERROR: Failed to connect to ${URL}" >&2
     exit 1
   }
-  login_status=$(echo "$login_response" | tail -n1)
   if [[ $login_status -ge 400 ]]; then
     echo "# ERROR: Login failed with HTTP ${login_status}. Check password." >&2
     exit 1
   fi
-  # Extract session cookie from Set-Cookie in the response
-  SESSION_COOKIE=$(echo "$login_response" | sed -n 's/.*\(cc-session=[^ ;]*\).*/\1/p' | head -n1)
-  if [[ -z $SESSION_COOKIE ]]; then
-    echo "# WARNING: Login succeeded but no session cookie found. Requests may fail." >&2
+  # Verify cookie file has content
+  if [[ ! -s $COOKIE_FILE ]]; then
+    echo "# WARNING: Login succeeded (HTTP ${login_status}) but no cookies received." >&2
   fi
 fi
 
@@ -86,8 +92,8 @@ api_get() {
 
   if [[ -n $TOKEN ]]; then
     auth_args+=(-H "Authorization: Bearer $TOKEN")
-  elif [[ -n $SESSION_COOKIE ]]; then
-    auth_args+=(-b "$SESSION_COOKIE")
+  elif [[ -n $COOKIE_FILE && -f $COOKIE_FILE ]]; then
+    auth_args+=(-b "$COOKIE_FILE")
   fi
 
   response=$(curl -sk -w '\n%{http_code}' "${auth_args[@]}" "${URL}${path}" 2>/dev/null) || {
