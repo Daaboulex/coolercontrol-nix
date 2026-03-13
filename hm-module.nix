@@ -301,13 +301,13 @@ let
 
     # Load token if available
     TOKEN_FILE="$HOME/.config/coolerctl/token"
-    if [[ -f "$TOKEN_FILE" ]]; then
-      TOKEN=$(cat "$TOKEN_FILE")
-    elif [[ -n "''${COOLERCONTROL_TOKEN:-}" ]]; then
+    if [[ -n "''${COOLERCONTROL_TOKEN:-}" ]]; then
       TOKEN="$COOLERCONTROL_TOKEN"
+    elif [[ -f "$TOKEN_FILE" ]]; then
+      TOKEN=$(cat "$TOKEN_FILE")
     fi
 
-    auth_header() {
+    auth_args() {
       if [[ -n "$TOKEN" ]]; then
         echo "-H"
         echo "Authorization: Bearer $TOKEN"
@@ -317,17 +317,17 @@ let
     api() {
       local method="$1" path="$2"
       shift 2
-      ${curlCmd} -sf -X "$method" \
+      ${curlCmd} -skf -X "$method" \
         -H "Content-Type: application/json" \
-        $(auth_header) \
+        $(auth_args) \
         "$@" \
-        "''${URL}/api''${path}"
+        "''${URL}''${path}"
     }
 
     # Wait for daemon (up to 30s)
     echo "Waiting for CoolerControl daemon at $URL..."
     for i in $(seq 1 30); do
-      if ${curlCmd} -sf -o /dev/null "''${URL}/api/handshake" 2>/dev/null; then
+      if ${curlCmd} -skf -o /dev/null "''${URL}/handshake" 2>/dev/null; then
         echo "Daemon reachable after ''${i}s."
         break
       fi
@@ -397,7 +397,7 @@ in
 
     url = lib.mkOption {
       type = lib.types.str;
-      default = "http://localhost:11987";
+      default = "https://localhost:11987";
       description = "CoolerControl daemon URL.";
     };
 

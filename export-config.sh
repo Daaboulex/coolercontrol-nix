@@ -4,16 +4,20 @@
 #
 # Usage:
 #   ./export-config.sh                              # default localhost
-#   ./export-config.sh --url http://host:11987      # custom URL
-#   ./export-config.sh --token <bearer-token>       # explicit auth
-#   COOLERCONTROL_TOKEN=xxx ./export-config.sh      # env var auth
+#   ./export-config.sh --url https://host:11987     # custom URL
+#   ./export-config.sh --token <access-token>       # access token auth (Bearer)
+#   ./export-config.sh --password <password>        # basic auth login (CCAdmin)
+#   COOLERCONTROL_TOKEN=xxx ./export-config.sh      # env var token auth
+#   COOLERCONTROL_PASSWORD=xxx ./export-config.sh   # env var password auth
 #
 # Dependencies: curl, jq
 
 set -euo pipefail
 
-URL="http://localhost:11987"
+URL="https://localhost:11987"
 TOKEN="${COOLERCONTROL_TOKEN:-}"
+PASSWORD="${COOLERCONTROL_PASSWORD:-}"
+SESSION_COOKIE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,15 +29,21 @@ while [[ $# -gt 0 ]]; do
     TOKEN="$2"
     shift 2
     ;;
+  --password)
+    PASSWORD="$2"
+    shift 2
+    ;;
   -h | --help)
-    echo "Usage: $0 [--url URL] [--token TOKEN]"
+    echo "Usage: $0 [--url URL] [--token TOKEN] [--password PASSWORD]"
     echo ""
     echo "Read CoolerControl daemon state and output a Nix attrset."
     echo ""
     echo "Options:"
-    echo "  --url URL      Daemon URL (default: http://localhost:11987)"
-    echo "  --token TOKEN  Bearer token for authentication"
-    echo "                 (or set COOLERCONTROL_TOKEN env var)"
+    echo "  --url URL          Daemon URL (default: https://localhost:11987)"
+    echo "  --token TOKEN      Access token for Bearer auth"
+    echo "                     (or set COOLERCONTROL_TOKEN env var)"
+    echo "  --password PASS    Password for CCAdmin basic auth login"
+    echo "                     (or set COOLERCONTROL_PASSWORD env var)"
     exit 0
     ;;
   *)
@@ -46,17 +56,41 @@ done
 # Strip trailing slash
 URL="${URL%/}"
 
-# Build curl auth header
-AUTH_HEADER=()
-if [[ -n $TOKEN ]]; then
-  AUTH_HEADER=(-H "Authorization: Bearer $TOKEN")
+# Perform basic auth login if password provided (and no token)
+if [[ -z $TOKEN && -n $PASSWORD ]]; then
+  BASIC_CREDS=$(printf 'CCAdmin:%s' "$PASSWORD" | base64 -w0)
+  login_response=$(curl -sk -w '\n%{http_code}' -X POST \
+    -H "Authorization: Basic $BASIC_CREDS" \
+    -c - \
+    "${URL}/login" 2>/dev/null) || {
+    echo "# ERROR: Failed to login to ${URL}" >&2
+    exit 1
+  }
+  login_status=$(echo "$login_response" | tail -n1)
+  if [[ $login_status -ge 400 ]]; then
+    echo "# ERROR: Login failed with HTTP ${login_status}. Check password." >&2
+    exit 1
+  fi
+  # Extract session cookie from Set-Cookie in the response
+  SESSION_COOKIE=$(echo "$login_response" | sed -n 's/.*\(cc-session=[^ ;]*\).*/\1/p' | head -n1)
+  if [[ -z $SESSION_COOKIE ]]; then
+    echo "# WARNING: Login succeeded but no session cookie found. Requests may fail." >&2
+  fi
 fi
 
 # Try a request; handle auth gracefully
 api_get() {
   local path="$1"
   local response status body
-  response=$(curl -s -w '\n%{http_code}' "${AUTH_HEADER[@]}" "${URL}/api${path}" 2>/dev/null) || {
+  local auth_args=()
+
+  if [[ -n $TOKEN ]]; then
+    auth_args+=(-H "Authorization: Bearer $TOKEN")
+  elif [[ -n $SESSION_COOKIE ]]; then
+    auth_args+=(-b "$SESSION_COOKIE")
+  fi
+
+  response=$(curl -sk -w '\n%{http_code}' "${auth_args[@]}" "${URL}${path}" 2>/dev/null) || {
     echo "# ERROR: Failed to connect to ${URL}" >&2
     return 1
   }
@@ -64,16 +98,16 @@ api_get() {
   body=$(echo "$response" | sed '$d')
 
   if [[ $status == "401" ]]; then
-    if [[ -z $TOKEN ]]; then
-      echo "# WARNING: API returned 401 Unauthorized. Use --token or COOLERCONTROL_TOKEN." >&2
+    if [[ -z $TOKEN && -z $PASSWORD ]]; then
+      echo "# WARNING: API returned 401 Unauthorized. Use --token, --password, or set COOLERCONTROL_TOKEN/COOLERCONTROL_PASSWORD." >&2
     else
-      echo "# ERROR: Token rejected (401)." >&2
+      echo "# ERROR: Authentication rejected (401)." >&2
     fi
     return 1
   fi
 
   if [[ $status -ge 400 ]]; then
-    echo "# WARNING: GET /api${path} returned HTTP ${status}" >&2
+    echo "# WARNING: GET ${path} returned HTTP ${status}" >&2
     echo "null"
     return 0
   fi
@@ -137,7 +171,7 @@ echo "  activeMode = $(echo "$active_mode" | to_nix);"
 echo ""
 
 # ── Custom sensors ──
-echo "  # ── Custom sensors ──"
+echo "  # ── Custom sensors (may not exist) ──"
 custom_sensors=$(api_get "/custom-sensors" 2>/dev/null) || custom_sensors="[]"
 echo "  customSensors = $(echo "$custom_sensors" | to_nix);"
 echo ""
