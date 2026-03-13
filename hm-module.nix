@@ -163,6 +163,16 @@ let
         default = null;
         description = "Apply device settings on daemon startup.";
       };
+      no_init = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Skip device initialization on daemon startup.";
+      };
+      startup_delay = lib.mkOption {
+        type = lib.types.nullOr lib.types.int;
+        default = null;
+        description = "Delay in seconds before applying settings after daemon start.";
+      };
       thinkpad_full_speed = lib.mkOption {
         type = lib.types.nullOr lib.types.bool;
         default = null;
@@ -173,10 +183,35 @@ let
         default = null;
         description = "Handle dynamically appearing temperature sources.";
       };
-      startup_delay = lib.mkOption {
-        type = lib.types.nullOr lib.types.int;
+      liquidctl_integration = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
         default = null;
-        description = "Delay in seconds before applying settings after daemon start.";
+        description = "Enable liquidctl integration for AIO/pump devices.";
+      };
+      hide_duplicate_devices = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Hide duplicate device entries in the UI.";
+      };
+      compress = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Enable compression for API responses.";
+      };
+      poll_rate = lib.mkOption {
+        type = lib.types.nullOr lib.types.float;
+        default = null;
+        description = "Sensor polling rate in seconds.";
+      };
+      drivetemp_suspend = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Suspend drivetemp monitoring during system sleep.";
+      };
+      allow_unencrypted = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Allow unencrypted HTTP connections (not recommended).";
       };
     };
   };
@@ -276,6 +311,14 @@ let
           v = s.apply_on_boot;
         }
         {
+          k = "no_init";
+          v = s.no_init;
+        }
+        {
+          k = "startup_delay";
+          v = s.startup_delay;
+        }
+        {
           k = "thinkpad_full_speed";
           v = s.thinkpad_full_speed;
         }
@@ -284,8 +327,28 @@ let
           v = s.handle_dynamic_temps;
         }
         {
-          k = "startup_delay";
-          v = s.startup_delay;
+          k = "liquidctl_integration";
+          v = s.liquidctl_integration;
+        }
+        {
+          k = "hide_duplicate_devices";
+          v = s.hide_duplicate_devices;
+        }
+        {
+          k = "compress";
+          v = s.compress;
+        }
+        {
+          k = "poll_rate";
+          v = s.poll_rate;
+        }
+        {
+          k = "drivetemp_suspend";
+          v = s.drivetemp_suspend;
+        }
+        {
+          k = "allow_unencrypted";
+          v = s.allow_unencrypted;
         }
       ]
     );
