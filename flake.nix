@@ -31,18 +31,20 @@
         {
           coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix shared;
           coolercontrold = pkgs.callPackage ./coolercontrold.nix (
-            shared // { coolercontrol-ui-data = self.packages.${system}.coolercontrol-ui-data; }
+            shared // { inherit (self.packages.${system}) coolercontrol-ui-data; }
           );
           coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix shared;
+          coolerctl = pkgs.callPackage ./cli/package.nix { };
           default = self.packages.${system}.coolercontrold;
         }
       );
 
-      overlays.default = final: prev: {
+      overlays.default = _final: prev: {
         coolercontrol = {
-          coolercontrold = self.packages.${prev.stdenv.hostPlatform.system}.coolercontrold;
-          coolercontrol-gui = self.packages.${prev.stdenv.hostPlatform.system}.coolercontrol-gui;
-          coolercontrol-ui-data = self.packages.${prev.stdenv.hostPlatform.system}.coolercontrol-ui-data;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrold;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrol-gui;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrol-ui-data;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolerctl;
         };
       };
 
