@@ -228,6 +228,37 @@ programs.coolercontrol = {
   # Activate a mode on login
   activeMode = "jkl012";
 
+  # Per-device settings (manual speed, profile assignment, lighting, LCD)
+  devices.my-gpu = {
+    uid = "97910386...";
+    channels.fan1 = {
+      profile_uid = "abc123";
+      lighting = {
+        mode = "Static";
+        color = "#ff0000";
+      };
+    };
+  };
+
+  # Custom sensors (Mix, File, etc.)
+  customSensors.ram-aggregator = {
+    id = "sensor1";
+    cs_type = "Mix";
+    mix_function = "Max";
+    sources = [
+      { temp_source = { temp_name = "temp1"; device_uid = "93a9b924..."; }; weight = 1; }
+      { temp_source = { temp_name = "temp1"; device_uid = "601e430e..."; }; weight = 1; }
+    ];
+  };
+
+  # Plugin configurations
+  plugins.coolerdash = {
+    id = "coolerdash";
+    config = ''
+      # raw plugin config text
+    '';
+  };
+
   # Temperature alerts
   alerts = [
     { channel = "CPU"; threshold_celsius = 95; trigger = "above"; }
@@ -285,6 +316,9 @@ The output documents all devices, profiles, functions, modes, alerts, custom sen
 | `functions` | attrsOf submodule | `{}` | Response function definitions |
 | `modes` | attrsOf submodule | `{}` | Device-channel-profile assignments |
 | `activeMode` | nullOr str | `null` | Mode UID to activate on login |
+| `devices` | attrsOf submodule | `{}` | Per-device/channel manual settings and lighting |
+| `plugins` | attrsOf submodule | `{}` | Plugin configurations |
+| `customSensors` | attrsOf submodule | `{}` | Custom aggregated or file sensors |
 | `alerts` | listOf submodule | `[]` | Temperature threshold alerts |
 | `settings` | nullOr submodule | `null` | Global daemon settings |
 | `extraCommands` | listOf str | `[]` | Additional commands after applying config |
@@ -396,7 +430,7 @@ coolerctl temps
 
 ## Known Issues
 
-- **Plugins**: The Plugins tab in the GUI may be empty. This is because the daemon's plugin loading mechanism currently expects plugins in standard FHS locations (like `/usr/lib/coolercontrol`), which are not present on NixOS. A future update will patch the daemon to support Nix-native plugin paths.
+- **Plugins**: To add plugins on NixOS, place their `manifest.toml` and files in `/var/lib/coolercontrol/plugins/<plugin_id>/`. The daemon is patched to search this mutable directory. Note that the daemon includes `nodejs` and `python3` in its environment to support common plugins.
 - **PCI Device Names**: Resolved via a patch to `pciid-parser` that points to the Nix store `hwdata` path.
 
 ## Credits
