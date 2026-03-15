@@ -377,6 +377,28 @@ coolercontrol-nix/
         └── check-upstream.yml # Automated upstream release tracking
 ```
 
+## CLI Utility
+
+A Python-based CLI `coolerctl` is provided for interacting with the daemon from the command line.
+
+```bash
+# Login to get a token
+coolerctl auth login
+
+# Export current daemon state to Nix (Home Manager)
+coolerctl export-config
+
+# Quick status
+coolerctl status
+coolerctl fans
+coolerctl temps
+```
+
+## Known Issues
+
+- **Plugins**: The Plugins tab in the GUI may be empty. This is because the daemon's plugin loading mechanism currently expects plugins in standard FHS locations (like `/usr/lib/coolercontrol`), which are not present on NixOS. A future update will patch the daemon to support Nix-native plugin paths.
+- **PCI Device Names**: Resolved via a patch to `pciid-parser` that points to the Nix store `hwdata` path.
+
 ## Credits
 
 - [Guy Boldon (codifryed)](https://gitlab.com/codifryed) — CoolerControl developer
