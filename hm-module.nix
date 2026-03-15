@@ -156,6 +156,127 @@ let
     };
   };
 
+  channelSettingsSubmodule = lib.types.submodule {
+    options = {
+      profile_uid = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Profile UID to assign to this channel.";
+      };
+      speed_fixed = lib.mkOption {
+        type = lib.types.nullOr lib.types.int;
+        default = null;
+        description = "Fixed speed percentage for manual mode.";
+      };
+      lighting = lib.mkOption {
+        type = lib.types.nullOr lib.types.attrs;
+        default = null;
+        description = "Lighting configuration for this channel.";
+      };
+      lcd = lib.mkOption {
+        type = lib.types.nullOr lib.types.attrs;
+        default = null;
+        description = "LCD configuration for this channel.";
+      };
+    };
+  };
+
+  deviceSettingsSubmodule = lib.types.submodule {
+    options = {
+      uid = lib.mkOption {
+        type = lib.types.str;
+        description = "Device UID.";
+      };
+      is_legacy690 = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Whether to enable AseTek 690 legacy mode.";
+      };
+      thinkpad_fan_control = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = "Whether to enable ThinkPad fan control for this device.";
+      };
+      channels = lib.mkOption {
+        type = lib.types.lazyAttrsOf channelSettingsSubmodule;
+        default = { };
+        description = "Per-channel settings for this device.";
+      };
+    };
+  };
+
+  pluginSubmodule = lib.types.submodule {
+    options = {
+      id = lib.mkOption {
+        type = lib.types.str;
+        description = "Plugin ID.";
+      };
+      enabled = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether the plugin is enabled.";
+      };
+      config = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Raw plugin configuration (usually text/plain).";
+      };
+    };
+  };
+
+  customSensorSubmodule = lib.types.submodule {
+    options = {
+      id = lib.mkOption {
+        type = lib.types.str;
+        description = "Custom sensor ID.";
+      };
+      cs_type = lib.mkOption {
+        type = lib.types.str;
+        default = "Mix";
+        description = "Custom sensor type (e.g., Mix, File).";
+      };
+      mix_function = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = "Max";
+        description = "Mix function (e.g., Max, Average). Only used if cs_type is Mix.";
+      };
+      sources = lib.mkOption {
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options = {
+              temp_source = lib.mkOption {
+                type = lib.types.submodule {
+                  options = {
+                    temp_name = lib.mkOption {
+                      type = lib.types.str;
+                      description = "Temperature source name.";
+                    };
+                    device_uid = lib.mkOption {
+                      type = lib.types.str;
+                      description = "Device UID.";
+                    };
+                  };
+                };
+              };
+              weight = lib.mkOption {
+                type = lib.types.number;
+                default = 1;
+                description = "Weight of this source.";
+              };
+            };
+          }
+        );
+        default = [ ];
+        description = "List of temperature sources for Mix sensors.";
+      };
+      extra = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+        description = "Additional custom sensor fields passed to the API as-is.";
+      };
+    };
+  };
+
   settingsSubmodule = lib.types.submodule {
     options = {
       apply_on_boot = lib.mkOption {
@@ -296,6 +417,23 @@ let
       // a.extra
     );
 
+  # Build JSON payload for a custom sensor
+  mkCustomSensorJson =
+    _name: s:
+    let
+      base = {
+        inherit (s) id cs_type mix_function;
+        sources = map (src: {
+          inherit (src) weight;
+          temp_source = {
+            inherit (src.temp_source) temp_name device_uid;
+          };
+        }) s.sources;
+      }
+      // s.extra;
+    in
+    builtins.toJSON base;
+
   # Build settings PATCH payload (only non-null fields)
   mkSettingsJson =
     s:
@@ -387,6 +525,17 @@ let
         "''${URL}''${path}"
     }
 
+    api_raw() {
+      local method="$1" path="$2"
+      local content_type="$3"
+      shift 3
+      ${curlCmd} -skf -X "$method" \
+        -H "Content-Type: $content_type" \
+        $(auth_args) \
+        "$@" \
+        "''${URL}''${path}"
+    }
+
     # Wait for daemon (up to 30s)
     echo "Waiting for CoolerControl daemon at $URL..."
     for i in $(seq 1 30); do
@@ -401,6 +550,29 @@ let
       sleep 1
     done
 
+    # ── Ordering ──
+    ${lib.optionalString (cfg.profiles != { }) ''
+      echo "Setting profile order"
+      api POST "/profiles/order" -d '{"profiles": [${
+        lib.concatStringsSep "," (lib.mapAttrsToList (_name: p: "{\"uid\":\"${p.uid}\"}") cfg.profiles)
+      }]}'
+    ''}
+
+    ${lib.optionalString (cfg.functions != { }) ''
+      echo "Setting function order"
+      api POST "/functions/order" -d '{"functions": [${
+        lib.concatStringsSep "," (lib.mapAttrsToList (_name: f: "{\"uid\":\"${f.uid}\"}") cfg.functions)
+      }]}'
+    ''}
+
+    ${lib.optionalString (cfg.modes != { }) ''
+      echo "Setting mode order"
+      api POST "/modes/order" -d '{"modes": [${
+        lib.concatStringsSep "," (lib.mapAttrsToList (_name: m: "{\"uid\":\"${m.uid}\"}") cfg.modes)
+      }]}'
+    ''}
+
+    # ── Profiles & Functions ──
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: p: ''
         echo "Applying profile: ${p.name} (${p.uid})"
@@ -415,6 +587,45 @@ let
       '') cfg.functions
     )}
 
+    # ── Devices ──
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (_name: d: ''
+        echo "Applying settings for device: ${d.uid}"
+        ${lib.optionalString (d.is_legacy690 != null) ''
+          api PATCH "/devices/${d.uid}/asetek690" -d '{"is_legacy690": ${
+            if d.is_legacy690 then "true" else "false"
+          }}'
+        ''}
+        ${lib.optionalString (d.thinkpad_fan_control != null) ''
+          api PUT "/thinkpad-fan-control" -d '{"enable": ${
+            if d.thinkpad_fan_control then "true" else "false"
+          }}'
+        ''}
+        ${lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (channel: s: ''
+            echo "  Channel ${channel}:"
+            ${lib.optionalString (s.speed_fixed != null) ''
+              echo "    Setting manual duty: ${toString s.speed_fixed}%"
+              api PUT "/devices/${d.uid}/settings/${channel}/manual" -d '{"speed_fixed": ${toString s.speed_fixed}}'
+            ''}
+            ${lib.optionalString (s.profile_uid != null) ''
+              echo "    Assigning profile: ${s.profile_uid}"
+              api PUT "/devices/${d.uid}/settings/${channel}/profile" -d '{"profile_uid": "${s.profile_uid}"}'
+            ''}
+            ${lib.optionalString (s.lighting != null) ''
+              echo "    Setting lighting"
+              api PUT "/devices/${d.uid}/settings/${channel}/lighting" -d '${builtins.toJSON s.lighting}'
+            ''}
+            ${lib.optionalString (s.lcd != null) ''
+              echo "    Setting LCD"
+              api PUT "/devices/${d.uid}/settings/${channel}/lcd" -d '${builtins.toJSON s.lcd}'
+            ''}
+          '') d.channels
+        )}
+      '') cfg.devices
+    )}
+
+    # ── Modes ──
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: m: ''
         echo "Applying mode: ${m.name} (${m.uid})"
@@ -424,9 +635,28 @@ let
 
     ${lib.optionalString (cfg.activeMode != null) ''
       echo "Activating mode: ${cfg.activeMode}"
-      api PUT "/modes-active" -d '"${cfg.activeMode}"'
+      api PUT "/modes-active/${cfg.activeMode}"
     ''}
 
+    # ── Custom Sensors ──
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (name: s: ''
+        echo "Creating custom sensor: ${s.id}"
+        api POST "/custom-sensors" -d '${mkCustomSensorJson name s}'
+      '') cfg.customSensors
+    )}
+
+    # ── Plugins ──
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (_name: p: ''
+        echo "Applying plugin: ${p.id}"
+        ${lib.optionalString (p.config != null) ''
+          api_raw PUT "/plugins/${p.id}/config" "text/plain; charset=utf-8" --data-binary '${p.config}'
+        ''}
+      '') cfg.plugins
+    )}
+
+    # ── Alerts ──
     ${lib.concatStringsSep "\n" (
       map (a: ''
         echo "Creating alert for channel: ${a.channel}"
@@ -434,6 +664,7 @@ let
       '') cfg.alerts
     )}
 
+    # ── Global Settings ──
     ${lib.optionalString (cfg.settings != null) (
       let
         json = mkSettingsJson cfg.settings;
@@ -486,6 +717,24 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Mode UID to activate on login.";
+    };
+
+    devices = lib.mkOption {
+      type = lib.types.lazyAttrsOf deviceSettingsSubmodule;
+      default = { };
+      description = "Per-device settings and channel mappings. Keys are arbitrary names, UIDs come from the daemon.";
+    };
+
+    plugins = lib.mkOption {
+      type = lib.types.lazyAttrsOf pluginSubmodule;
+      default = { };
+      description = "Plugin configurations. Keys are arbitrary names, IDs come from the daemon.";
+    };
+
+    customSensors = lib.mkOption {
+      type = lib.types.lazyAttrsOf customSensorSubmodule;
+      default = { };
+      description = "Custom sensor definitions to create. Keys are arbitrary names, IDs come from the daemon.";
     };
 
     alerts = lib.mkOption {
