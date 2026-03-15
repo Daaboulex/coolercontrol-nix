@@ -9,6 +9,7 @@
   protobuf,
   kmod,
   hwdata,
+  nodejs,
   coolercontrol-ui-data,
   version,
   src,
@@ -21,7 +22,10 @@ rustPlatform.buildRustPackage {
 
   cargoHash = "sha256-i6QYJ2kVXpYVbGyY/5EeGbCVCkxLeqf1mgvrXKRdup0=";
 
-  buildInputs = [ libdrm ];
+  buildInputs = [
+    libdrm
+    nodejs
+  ];
 
   nativeBuildInputs = [
     protobuf
@@ -44,6 +48,12 @@ rustPlatform.buildRustPackage {
     # $cargoDepsCopy is set by cargoSetupPostUnpackHook during the unpack phase.
     substituteInPlace "$cargoDepsCopy/pciid-parser-0.8.0/src/lib.rs" \
       --replace-fail '@hwdata@' '${hwdata}'
+
+    # Patch plugin discovery to support COOLERCONTROL_PLUGINS_PATH environment variable.
+    # This allows declarative/mutable plugin paths on NixOS.
+    substituteInPlace daemon/src/repositories/service_plugin/service_plugin_repo.rs \
+      --replace-fail 'let plugins_dir = Path::new(DEFAULT_PLUGINS_PATH);' \
+      'let env_path = std::env::var("COOLERCONTROL_PLUGINS_PATH").unwrap_or_else(|_| DEFAULT_PLUGINS_PATH.to_string()); let plugins_dir = Path::new(&env_path);'
   '';
 
   postInstall = ''
@@ -57,7 +67,12 @@ rustPlatform.buildRustPackage {
 
     buildPythonPath "''${pythonPath[*]}"
     wrapProgram "$out/bin/coolercontrold" \
-      --prefix PATH : ${lib.makeBinPath [ kmod ]}:$program_PATH \
+      --prefix PATH : ${
+        lib.makeBinPath [
+          kmod
+          nodejs
+        ]
+      }:$program_PATH \
       --prefix PYTHONPATH : $program_PYTHONPATH
   '';
 
