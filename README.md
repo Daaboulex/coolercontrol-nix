@@ -263,10 +263,14 @@ Use `export-config.sh` to snapshot the daemon's current state as a Nix attrset:
 # Export from local daemon
 ./export-config.sh
 
+# Export with password authentication (CCAdmin)
+./export-config.sh --password <password>
+COOLERCONTROL_PASSWORD=xxx ./export-config.sh
+
 # Export from a remote instance
 ./export-config.sh --url https://192.168.1.100:11987
 
-# With authentication
+# With authentication token
 ./export-config.sh --token <bearer-token>
 COOLERCONTROL_TOKEN=xxx ./export-config.sh
 ```

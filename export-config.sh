@@ -123,17 +123,29 @@ api_get() {
 
 # Helper: convert JSON to Nix-ish repr via jq
 to_nix() {
-  jq -r '
-    def to_nix:
+  local key_field="${1:-}"
+  jq -r --arg key_field "$key_field" '
+    def to_nix(indent):
       if type == "null" then "null"
       elif type == "boolean" then (if . then "true" else "false" end)
       elif type == "number" then tostring
       elif type == "string" then "\"\(gsub("\\\\"; "\\\\") | gsub("\""; "\\\""))\""
-      elif type == "array" then "[\n" + ([.[] | "    " + to_nix] | join("\n")) + "\n  ]"
-      elif type == "object" then "{\n" + ([to_entries[] | "    \(.key) = \(.value | to_nix);"] | join("\n")) + "\n  }"
+      elif type == "array" then
+        if length == 0 then "[]"
+        else "[\n" + ([.[] | (indent + "  ") as $new_indent | $new_indent + to_nix($new_indent)] | join("\n")) + "\n" + indent + "]"
+        end
+      elif type == "object" then
+        if length == 0 then "{}"
+        else "{\n" + ([to_entries[] | (indent + "  ") as $new_indent | $new_indent + "\(.key) = \(.value | to_nix($new_indent));"] | join("\n")) + "\n" + indent + "}"
+        end
       else tostring
       end;
-    to_nix
+
+    if $key_field != "" and type == "array" then
+      "{\n" + ([.[] | "  \((.[$key_field] | gsub("[^a-zA-Z0-9_-]"; "-") | sub("^[0-9]"; "_"+.)) ) = " + to_nix("  ") + ";"] | join("\n")) + "\n}"
+    else
+      to_nix("")
+    end
   '
 }
 
@@ -146,40 +158,82 @@ echo "# Paste relevant sections into your Home Manager coolercontrol config."
 echo ""
 echo "{"
 
-# ── Devices ──
-echo "  # ── Devices ──"
+# ── Devices (Hardware Info) ──
+echo "  # ── Devices (Hardware Reference) ──"
 devices=$(api_get "/devices" 2>/dev/null) || devices="[]"
-echo "  devices = $(echo "$devices" | to_nix);"
+echo "  # devices_info = $(echo "$devices" | to_nix);"
+echo ""
+
+# ── Device Settings (Manual/Profile/Lighting/LCD) ──
+echo "  # ── Per-Device Settings ──"
+echo "  devices = {"
+# For each device, fetch its detailed settings
+while read -r uid name; do
+  [[ -z $uid ]] && continue
+  safe_name=$(echo "$name" | jq -Rr 'gsub("[^a-zA-Z0-9_-]"; "-") | sub("^[0-9]"; "_"+.)')
+  settings=$(api_get "/devices/${uid}/settings" 2>/dev/null) || settings="{}"
+
+  # Check for legacy690
+  legacy690=$(api_get "/devices/${uid}/asetek690" 2>/dev/null | jq -r '.is_legacy690 // false')
+
+  echo "    ${safe_name} = {"
+  echo "      uid = \"${uid}\";"
+  [[ $legacy690 == "true" ]] && echo "      is_legacy690 = true;"
+
+  # Process channels
+  echo "      channels = $(echo "$settings" | to_nix);"
+  echo "    };"
+done < <(echo "$devices" | jq -r '.[] | "\(.uid) \(.name)"')
+echo "  };"
 echo ""
 
 # ── Profiles ──
 echo "  # ── Profiles (fan curves) ──"
 profiles=$(api_get "/profiles" 2>/dev/null) || profiles="[]"
-echo "  profiles = $(echo "$profiles" | to_nix);"
+echo "  profiles = $(echo "$profiles" | to_nix "name");"
 echo ""
 
 # ── Functions ──
 echo "  # ── Functions ──"
 functions=$(api_get "/functions" 2>/dev/null) || functions="[]"
-echo "  functions = $(echo "$functions" | to_nix);"
+echo "  functions = $(echo "$functions" | to_nix "name");"
 echo ""
 
 # ── Modes ──
 echo "  # ── Modes ──"
 modes=$(api_get "/modes" 2>/dev/null) || modes="[]"
-echo "  modes = $(echo "$modes" | to_nix);"
+echo "  modes = $(echo "$modes" | to_nix "name");"
 echo ""
 
 # ── Active mode ──
 echo "  # ── Active mode ──"
 active_mode=$(api_get "/modes-active" 2>/dev/null) || active_mode="null"
-echo "  activeMode = $(echo "$active_mode" | to_nix);"
+# active_mode is often a list of UIDs or a single UID
+echo "  activeMode = $(echo "$active_mode" | jq -r 'if type == "array" then .[0] else . end' | to_nix);"
 echo ""
 
 # ── Custom sensors ──
-echo "  # ── Custom sensors (may not exist) ──"
+echo "  # ── Custom sensors ──"
 custom_sensors=$(api_get "/custom-sensors" 2>/dev/null) || custom_sensors="[]"
-echo "  customSensors = $(echo "$custom_sensors" | to_nix);"
+echo "  customSensors = $(echo "$custom_sensors" | to_nix "id");"
+echo ""
+
+# ── Plugins ──
+echo "  # ── Plugins ──"
+plugins=$(api_get "/plugins" 2>/dev/null) || plugins="[]"
+echo "  plugins = {"
+while read -r id name; do
+  [[ -z $id ]] && continue
+  safe_name=$(echo "$name" | jq -Rr 'gsub("[^a-zA-Z0-9_-]"; "-") | sub("^[0-9]"; "_"+.)')
+  config=$(api_get "/plugins/${id}/config" 2>/dev/null)
+  echo "    ${safe_name} = {"
+  echo "      id = \"${id}\";"
+  echo "      config = ''"
+  echo "${config}"
+  echo "      '';"
+  echo "    };"
+done < <(echo "$plugins" | jq -r '.[] | "\(.id) \(.name)"')
+echo "  };"
 echo ""
 
 # ── Alerts ──
