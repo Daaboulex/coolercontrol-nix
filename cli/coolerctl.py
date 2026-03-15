@@ -15,9 +15,14 @@ from typing import Optional
 import click
 import requests
 
-DEFAULT_BASE = "http://localhost:11987"
+DEFAULT_BASE = "https://localhost:11987"
 TOKEN_PATH = os.path.expanduser("~/.config/coolerctl/token")
 SESSION = requests.Session()
+SESSION.verify = False  # CoolerControl uses self-signed certs by default
+
+# Disable urllib3 warnings for unverified HTTPS
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ── Colors for terminal output ──
 
@@ -245,12 +250,23 @@ def auth():
 def auth_login(ctx, password: str):
     """Login and save a bearer token for future CLI use."""
     base = ctx.obj["base"]
-    resp = SESSION.post(f"{base}/login", json={"current_password": password}, timeout=10)
+    import base64
+    auth_bytes = f"CCAdmin:{password}".encode("utf-8")
+    auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
+    headers = {"Authorization": f"Basic {auth_b64}"}
+    
+    # Try POST /login with basic auth
+    resp = SESSION.post(f"{base}/login", headers=headers, timeout=10)
     if resp.status_code != 200:
-        raise ApiError("Login failed — check your password")
+        # Fallback to JSON payload if basic auth fails
+        resp = SESSION.post(f"{base}/login", json={"current_password": password}, timeout=10)
+        
+    if resp.status_code != 200:
+        raise ApiError(f"Login failed (HTTP {resp.status_code}) — check your password")
+    
     # Create a bearer token
     resp = SESSION.post(f"{base}/tokens", timeout=10,
-                        json={"name": "coolerctl"})
+                        json={"label": "coolerctl"})
     if resp.status_code != 200:
         raise ApiError(f"Failed to create token: {resp.text}")
     token_data = resp.json()
@@ -1679,6 +1695,203 @@ def quick_fans(ctx):
                 duty_str = f"{duty:5.1f}%" if duty is not None else "  N/A"
                 rpm_str = f"{rpm:5d} RPM" if rpm is not None else ""
                 click.echo(f"  {name:20s} {ch['name']:30s} {duty_str}  {rpm_str}")
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Export (Nix / Home Manager)
+# ══════════════════════════════════════════════════════════════════
+
+
+def _to_nix(data, indent="", key_field=None):
+    """Convert Python data to Nix-ish representation."""
+    import re
+
+    def _safe_key(k):
+        return re.sub(r"[^a-zA-Z0-9_-]", "-", str(k)) if not re.match(r"^[0-9]", str(k)) else f"_{k}"
+
+    if data is None:
+        return "null"
+    elif isinstance(data, bool):
+        return "true" if data else "false"
+    elif isinstance(data, (int, float)):
+        return str(data)
+    elif isinstance(data, str):
+        return json.dumps(data)
+    elif isinstance(data, list):
+        if not data:
+            return "[]"
+        if key_field and all(isinstance(x, dict) and key_field in x for x in data):
+            # Convert to attrset
+            lines = ["{"]
+            for x in data:
+                key = _safe_key(x[key_field])
+                val = _to_nix(x, indent + "  ")
+                lines.append(f"{indent}  {key} = {val};")
+            lines.append(f"{indent}}}")
+            return "\n".join(lines)
+        else:
+            # Inline short simple lists
+            if len(data) <= 3 and all(isinstance(x, (int, float, str, bool)) or x is None for x in data):
+                return "[" + ", ".join(_to_nix(x) for x in data) + "]"
+            
+            lines = ["[\n"]
+            for x in data:
+                lines.append(f"{indent}  {_to_nix(x, indent + '  ')}\n")
+            lines.append(f"{indent}]")
+            return "".join(lines)
+    elif isinstance(data, dict):
+        if not data:
+            return "{}"
+        
+        # Inline very short simple dicts
+        if len(data) <= 2 and all(isinstance(v, (int, float, str, bool)) or v is None for v in data.values()):
+            return "{ " + "; ".join(f"{k} = {_to_nix(v)}" for k, v in data.items()) + "; }"
+
+        lines = ["{\n"]
+        for k, v in data.items():
+            lines.append(f"{indent}  {k} = {_to_nix(v, indent + '  ')};\n")
+        lines.append(f"{indent}}}")
+        return "".join(lines)
+    return str(data)
+
+
+@cli.command("export-config")
+@click.pass_context
+def export_config(ctx):
+    """Export current daemon state as a Nix attrset for Home Manager.
+
+    Outputs a 1:1 declarative configuration block that can be pasted
+    directly into your coolercontrol.nix file.
+    """
+    import datetime
+    import re
+
+    def _safe_name(name):
+        safe = re.sub(r"[^a-zA-Z0-9_-]", "-", name)
+        if re.match(r"^[0-9]", safe):
+            return f"_{safe}"
+        return safe
+
+    base = ctx.obj["base"]
+    now = datetime.datetime.now().isoformat()
+
+    click.echo(f"# CoolerControl configuration export")
+    click.echo(f"# Generated: {now}")
+    click.echo(f"# Source: {base}")
+    click.echo("#")
+    click.echo("# This is a documentation snapshot of the daemon's current state.")
+    click.echo("# Paste relevant sections into your Home Manager coolercontrol config.")
+    click.echo("\n{")
+
+    # ── Devices (Hardware Reference) ──
+    click.echo("  # ── Devices (Hardware Reference) ──")
+    resp = api("GET", "/devices", base)
+    devices = resp.get("devices", []) if isinstance(resp, dict) else resp or []
+    click.echo(f"  # devices_info = {_to_nix(devices, '  ')};\n")
+
+    # ── Per-Device Settings ──
+    click.echo("  # ── Per-Device Settings ──")
+    click.echo("  devices = {")
+    for dev in devices:
+        uid = dev.get("uid")
+        name = dev.get("name", uid)
+        safe_name = _safe_name(name)
+        
+        # settings is GET /devices/{uid}/settings
+        settings = api("GET", f"/devices/{uid}/settings", base) or {}
+        
+        # legacy690 is usually only checkable via hardware info if GET /asetek690 fails (405)
+        # We will try to fetch it but catch the 405
+        legacy690 = False
+        try:
+            lresp = api("GET", f"/devices/{uid}/asetek690", base)
+            if isinstance(lresp, dict):
+                legacy690 = lresp.get("is_legacy690", False)
+        except ApiError as e:
+            if "405" not in str(e):
+                raise e
+
+        click.echo(f"    {safe_name} = {{")
+        click.echo(f"      uid = \"{uid}\";")
+        if legacy690:
+            click.echo("      is_legacy690 = true;")
+        click.echo(f"      channels = {_to_nix(settings, '      ')};")
+        click.echo("    };")
+    click.echo("  };\n")
+
+    # ── Profiles ──
+    click.echo("  # ── Profiles (fan curves) ──")
+    resp = api("GET", "/profiles", base)
+    profiles = resp.get("profiles", []) if isinstance(resp, dict) else resp or []
+    # Map speed_profile from [temp, duty] to {temp, duty}
+    for p in profiles:
+        if p.get("speed_profile"):
+            p["speed_profile"] = [{"temp": pt[0], "duty": pt[1]} for pt in p["speed_profile"]]
+    click.echo(f"  profiles = {_to_nix(profiles, '  ', key_field='name')};\n")
+
+    # ── Functions ──
+    click.echo("  # ── Functions ──")
+    resp = api("GET", "/functions", base)
+    functions = resp.get("functions", []) if isinstance(resp, dict) else resp or []
+    click.echo(f"  functions = {_to_nix(functions, '  ', key_field='name')};\n")
+
+    # ── Modes ──
+    click.echo("  # ── Modes ──")
+    resp = api("GET", "/modes", base)
+    modes = resp.get("modes", []) if isinstance(resp, dict) else resp or []
+    click.echo(f"  modes = {_to_nix(modes, '  ', key_field='name')};\n")
+
+    # ── Active Mode ──
+    click.echo("  # ── Active Mode ──")
+    active = api("GET", "/modes-active", base)
+    if isinstance(active, list) and active:
+        active = active[0]
+    elif isinstance(active, dict):
+        active = active.get("current_mode_uid")
+    click.echo(f"  activeMode = {_to_nix(active, '  ')};\n")
+
+    # ── Custom Sensors ──
+    click.echo("  # ── Custom Sensors ──")
+    resp = api("GET", "/custom-sensors", base)
+    custom = resp.get("custom_sensors", []) if isinstance(resp, dict) else resp or []
+    click.echo(f"  customSensors = {_to_nix(custom, '  ', key_field='id')};\n")
+
+    # ── Plugins ──
+    click.echo("  # ── Plugins ──")
+    click.echo("  plugins = {")
+    plugins_resp = api("GET", "/plugins", base)
+    plugins = plugins_resp if isinstance(plugins_resp, list) else [plugins_resp] if plugins_resp else []
+    for p in plugins:
+        pid = p.get("id")
+        name = p.get("name", pid)
+        safe_name = _safe_name(name)
+        try:
+            p_config = api_raw("GET", f"/plugins/{pid}/config", base) or ""
+            click.echo(f"    {safe_name} = {{")
+            click.echo(f"      id = \"{pid}\";")
+            click.echo("      config = ''")
+            click.echo(p_config)
+            click.echo("      '';")
+            click.echo("    };")
+        except ApiError as e:
+            if "401" in str(e):
+                # Skip if unauthorized
+                continue
+            raise e
+    click.echo("  };\n")
+
+    # ── Alerts ──
+    click.echo("  # ── Alerts ──")
+    resp = api("GET", "/alerts", base)
+    alerts = resp.get("alerts", []) if isinstance(resp, dict) else resp or []
+    click.echo(f"  alerts = {_to_nix(alerts, '  ')};\n")
+
+    # ── Global Settings ──
+    click.echo("  # ── Global Settings ──")
+    settings = api("GET", "/settings", base) or {}
+    click.echo(f"  settings = {_to_nix(settings, '  ')};\n")
+
+    click.echo("}")
 
 
 def main():

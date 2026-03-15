@@ -257,25 +257,21 @@ The module creates a systemd user service (`coolercontrol-apply.service`) that w
 
 ## Exporting configuration
 
-Use `export-config.sh` to snapshot the daemon's current state as a Nix attrset:
+The `coolerctl` CLI can snapshot the daemon's current state as a Nix attrset for direct use in Home Manager:
 
 ```bash
-# Export from local daemon
+# Recommended: Using the built-in CLI command
+coolerctl export-config
+
+# Or use the standalone script
 ./export-config.sh
 
-# Export with password authentication (CCAdmin)
+# With password authentication
+coolerctl --base-url https://localhost:11987 export-config  # CLI will use saved token
 ./export-config.sh --password <password>
-COOLERCONTROL_PASSWORD=xxx ./export-config.sh
-
-# Export from a remote instance
-./export-config.sh --url https://192.168.1.100:11987
-
-# With authentication token
-./export-config.sh --token <bearer-token>
-COOLERCONTROL_TOKEN=xxx ./export-config.sh
 ```
 
-The output documents all devices, profiles, functions, modes, alerts, custom sensors, and global settings. Use it as a reference when writing your Home Manager configuration — copy UIDs and settings from the export.
+The output documents all devices, profiles, functions, modes, alerts, custom sensors, and global settings. It is designed to be 1:1 compatible with the Home Manager module — you can copy and paste the output directly into your configuration.
 
 ## Home Manager options reference
 
