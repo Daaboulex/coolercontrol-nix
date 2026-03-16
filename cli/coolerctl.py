@@ -63,7 +63,8 @@ class ApiError(click.ClickException):
 def _load_token() -> str | None:
     """Load saved bearer token from disk."""
     if os.path.isfile(TOKEN_PATH):
-        return open(TOKEN_PATH).read().strip()
+        with open(TOKEN_PATH) as f:
+            return f.read().strip()
     return os.environ.get("COOLERCONTROL_TOKEN")
 
 
@@ -154,6 +155,7 @@ def fmt_json(data, compact: bool = False):
 
 
 @click.group()
+@click.version_option(version="0.1.0", prog_name="coolerctl")
 @click.option("--base-url", "-u", default=DEFAULT_BASE, envvar="COOLERCONTROL_URL",
               help="Daemon API base URL")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Force JSON output")
@@ -769,15 +771,32 @@ def profiles_list(ctx):
 @click.option("--type", "-t", "p_type", default="Graph",
               help="Profile type: Graph, Fixed, Mix, Default")
 @click.option("--speed-fixed", type=int, help="Fixed speed percentage")
+@click.option("--speed-profile", "speed_profile_str",
+              help="Fan curve as temp:duty pairs (e.g. '30:25,50:40,70:70,85:100')")
 @click.option("--temp-source", help="Temperature source as device_uid:channel")
 @click.option("--function", "function_uid", help="Function UID for this profile")
 @click.pass_context
 def profiles_create(ctx, name: str, p_type: str, speed_fixed: Optional[int],
-                     temp_source: Optional[str], function_uid: Optional[str]):
+                     speed_profile_str: Optional[str], temp_source: Optional[str],
+                     function_uid: Optional[str]):
     """Create a new profile."""
     payload = {"name": name, "p_type": p_type}
     if speed_fixed is not None:
         payload["speed_fixed"] = speed_fixed
+    if speed_profile_str:
+        try:
+            points = []
+            for pair in speed_profile_str.split(","):
+                t, d = pair.strip().split(":")
+                temp_val = float(t)
+                duty_val = int(d)
+                if duty_val < 0 or duty_val > 100:
+                    raise ValueError(f"duty must be 0-100, got {duty_val}")
+                points.append([temp_val, duty_val])
+            payload["speed_profile"] = points
+        except ValueError as e:
+            raise click.BadParameter(
+                f"Invalid speed-profile format: {e}. Use 'temp:duty,temp:duty,...'")
     if temp_source:
         parts = temp_source.split(":")
         payload["temp_source"] = {"device_uid": parts[0], "temp_name": parts[1]}
@@ -1365,10 +1384,19 @@ def settings_show(ctx):
 
 @settings.command("update")
 @click.option("--startup-delay", type=int, help="Startup delay in seconds")
+@click.option("--apply-on-boot/--no-apply-on-boot", default=None,
+              help="Re-apply settings on daemon startup")
+@click.option("--poll-rate", type=float, help="Sensor polling interval (0.5-5.0 seconds)")
+@click.option("--handle-dynamic-temps/--no-handle-dynamic-temps", default=None,
+              help="Handle hotplug temperature sources")
+@click.option("--liquidctl-integration/--no-liquidctl-integration", default=None,
+              help="Enable liquidctl for AIO coolers")
 @click.option("--from-json", "json_file", type=click.Path(exists=True),
               help="Update from a JSON file")
 @click.pass_context
-def settings_update(ctx, startup_delay: Optional[int], json_file: Optional[str]):
+def settings_update(ctx, startup_delay: Optional[int], apply_on_boot: Optional[bool],
+                     poll_rate: Optional[float], handle_dynamic_temps: Optional[bool],
+                     liquidctl_integration: Optional[bool], json_file: Optional[str]):
     """Update daemon settings."""
     if json_file:
         with open(json_file) as f:
@@ -1379,8 +1407,16 @@ def settings_update(ctx, startup_delay: Optional[int], json_file: Optional[str])
     payload = {}
     if startup_delay is not None:
         payload["startup_delay"] = startup_delay
+    if apply_on_boot is not None:
+        payload["apply_on_boot"] = apply_on_boot
+    if poll_rate is not None:
+        payload["poll_rate"] = poll_rate
+    if handle_dynamic_temps is not None:
+        payload["handle_dynamic_temps"] = handle_dynamic_temps
+    if liquidctl_integration is not None:
+        payload["liquidctl_integration"] = liquidctl_integration
     if not payload:
-        raise click.UsageError("No settings to update (use --startup-delay or --from-json)")
+        raise click.UsageError("No settings to update (use flags or --from-json)")
     api("PATCH", "/settings", ctx.obj["base"], json=payload)
     click.echo("Settings updated")
 
