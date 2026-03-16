@@ -6,26 +6,53 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
 
+concurrency:
+  group: auto-update
+  cancel-in-progress: false
+
 jobs:
-  check:
+  check-and-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Get current version
         id: current
         run: |
           VERSION=$(grep -oP 'version = "[^"]+"' flake.nix | head -1 | sed 's/version = "//;s/"//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
 
       - name: Get latest upstream release
         id: upstream
         run: |
           LATEST=$(curl -sf "https://gitlab.com/api/v4/projects/coolercontrol%2Fcoolercontrol/repository/tags?per_page=1" | jq -r '.[0].name')
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "Failed to fetch upstream version"
+            exit 1
+          fi
+          # Warn if tag format looks unexpected (has v prefix or other chars)
+          if echo "$LATEST" | grep -qP '^[^0-9]'; then
+            echo "::warning::Upstream tag has unexpected format: $LATEST"
+          fi
           echo "version=$LATEST" >> $GITHUB_OUTPUT
+          echo "Latest upstream: $LATEST"
 
       - name: Check if update needed
         id: check
@@ -38,27 +65,198 @@ jobs:
             echo "Update available: ${{ steps.current.outputs.version }} -> ${{ steps.upstream.outputs.version }}"
           fi
 
-      - name: Create issue for update
+      - name: Check for existing PR
         if: steps.check.outputs.needed == 'true'
+        id: existing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Check if issue already exists
-          EXISTING=$(gh issue list --search "Update to v${{ steps.upstream.outputs.version }}" --state open --json number --jq '.[0].number // empty')
+          NEW_VERSION="${{ steps.upstream.outputs.version }}"
+          EXISTING=$(gh pr list --search "Update CoolerControl to ${NEW_VERSION}" --state open --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
-            echo "Issue #$EXISTING already exists"
-            exit 0
+            echo "PR #$EXISTING already exists for ${NEW_VERSION}"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
-          gh issue create \
-            --title "Update CoolerControl to v${{ steps.upstream.outputs.version }}" \
-            --body "$(cat <<'EOF'
-          New upstream release detected.
+      - name: Update version and hashes
+        if: steps.check.outputs.needed == 'true' && steps.existing.outputs.skip != 'true'
+        id: update
+        run: |
+          set -euo pipefail
 
-          - Current: v${{ steps.current.outputs.version }}
-          - Latest: v${{ steps.upstream.outputs.version }}
-          - [Release notes](https://gitlab.com/coolercontrol/coolercontrol/-/releases/v${{ steps.upstream.outputs.version }})
+          OLD_VERSION="${{ steps.current.outputs.version }}"
+          NEW_VERSION="${{ steps.upstream.outputs.version }}"
 
-          **Manual update required:** Update version, rebuild hashes (cargoHash, npmDepsHash, src hash), and test build.
+          # Helper: extract hash from nix build error output
+          extract_hash() {
+            echo "$1" | sed 's/\x1b\[[0-9;]*m//g' | grep -oP 'got:\s+\Ksha256-[A-Za-z0-9+/=]+' | head -1
+          }
+
+          echo "=== Step 1: Update version in flake.nix ==="
+          sed -i "s/version = \"${OLD_VERSION}\"/version = \"${NEW_VERSION}\"/" flake.nix
+          sed -i "s/rev = \"${OLD_VERSION}\"/rev = \"${NEW_VERSION}\"/" flake.nix
+
+          echo "=== Step 2: Get new source hash ==="
+          # Set dummy hash to trigger hash mismatch error
+          sed -i 's|hash = "sha256-[A-Za-z0-9+/=]*"|hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' flake.nix
+          SRC_OUTPUT=$(nix build .#coolercontrold 2>&1 || true)
+          NEW_SRC_HASH=$(extract_hash "$SRC_OUTPUT")
+          if [ -z "$NEW_SRC_HASH" ]; then
+            echo "::error::Failed to extract source hash"
+            echo "Build output: $SRC_OUTPUT"
+            echo "status=hash-failed" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "New src hash: $NEW_SRC_HASH"
+          sed -i "s|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"|hash = \"${NEW_SRC_HASH}\"|" flake.nix
+
+          echo "=== Step 3: Get new cargoHash ==="
+          sed -i 's|cargoHash = "sha256-[A-Za-z0-9+/=]*"|cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' coolercontrold.nix
+          CARGO_OUTPUT=$(nix build .#coolercontrold 2>&1 || true)
+          NEW_CARGO_HASH=$(extract_hash "$CARGO_OUTPUT")
+          if [ -z "$NEW_CARGO_HASH" ]; then
+            echo "::error::Failed to extract cargoHash"
+            echo "status=hash-failed" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "New cargoHash: $NEW_CARGO_HASH"
+          sed -i "s|cargoHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"|cargoHash = \"${NEW_CARGO_HASH}\"|" coolercontrold.nix
+
+          echo "=== Step 4: Get new npmDepsHash ==="
+          sed -i 's|npmDepsHash = "sha256-[A-Za-z0-9+/=]*"|npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' coolercontrol-ui-data.nix
+          NPM_OUTPUT=$(nix build .#coolercontrol-ui-data 2>&1 || true)
+          NEW_NPM_HASH=$(extract_hash "$NPM_OUTPUT")
+          if [ -z "$NEW_NPM_HASH" ]; then
+            echo "::error::Failed to extract npmDepsHash"
+            echo "status=hash-failed" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "New npmDepsHash: $NEW_NPM_HASH"
+          sed -i "s|npmDepsHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"|npmDepsHash = \"${NEW_NPM_HASH}\"|" coolercontrol-ui-data.nix
+
+          echo "status=hashes-updated" >> $GITHUB_OUTPUT
+          echo "src_hash=${NEW_SRC_HASH}" >> $GITHUB_OUTPUT
+          echo "cargo_hash=${NEW_CARGO_HASH}" >> $GITHUB_OUTPUT
+          echo "npm_hash=${NEW_NPM_HASH}" >> $GITHUB_OUTPUT
+
+      - name: Verify all packages build
+        if: steps.update.outputs.status == 'hashes-updated'
+        id: verify
+        run: |
+          set -euo pipefail
+          echo "=== Verifying coolercontrold ==="
+          nix build .#coolercontrold --no-link
+          echo "=== Verifying coolercontrol-ui-data ==="
+          nix build .#coolercontrol-ui-data --no-link
+          echo "=== Verifying coolercontrol-gui ==="
+          nix build .#coolercontrol-gui --no-link
+          echo "=== Verifying coolerctl ==="
+          nix build .#coolerctl --no-link
+          echo "=== All packages verified ==="
+          echo "verified=true" >> $GITHUB_OUTPUT
+
+      - name: Update flake.lock
+        if: steps.update.outputs.status == 'hashes-updated'
+        run: nix flake update
+
+      - name: Create PR (verified build)
+        if: steps.verify.outputs.verified == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.upstream.outputs.version }}"
+          OLD_VERSION="${{ steps.current.outputs.version }}"
+          BRANCH="auto-update/${NEW_VERSION}"
+
+          git checkout -b "$BRANCH"
+          git add flake.nix flake.lock coolercontrold.nix coolercontrol-ui-data.nix
+          git commit -m "feat: update CoolerControl to ${NEW_VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update CoolerControl to ${NEW_VERSION}" \
+            --label "auto-update" \
+            --body "$(cat <<EOF
+          ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
+
+          [Release notes](https://gitlab.com/coolercontrol/coolercontrol/-/releases/${NEW_VERSION})
+
+          ### Updated hashes
+          - **src:** \`${{ steps.update.outputs.src_hash }}\`
+          - **cargoHash:** \`${{ steps.update.outputs.cargo_hash }}\`
+          - **npmDepsHash:** \`${{ steps.update.outputs.npm_hash }}\`
+
+          All 4 packages build successfully. CI will verify independently.
+
+          ---
+          *Created automatically by check-upstream workflow.*
+          EOF
+          )"
+
+      - name: Create draft PR (hash extraction failed)
+        if: steps.update.outputs.status == 'hash-failed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.upstream.outputs.version }}"
+          OLD_VERSION="${{ steps.current.outputs.version }}"
+          BRANCH="auto-update/${NEW_VERSION}"
+
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "wip: update CoolerControl to ${NEW_VERSION} (needs manual hash fixup)"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update CoolerControl to ${NEW_VERSION}" \
+            --label "auto-update,needs-manual-fix" \
+            --draft \
+            --body "$(cat <<EOF
+          ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
+
+          [Release notes](https://gitlab.com/coolercontrol/coolercontrol/-/releases/${NEW_VERSION})
+
+          ⚠️ **Automatic hash extraction failed.** Manual hash update required.
+
+          Run locally:
+          \`\`\`bash
+          nix build .#coolercontrold  # Fix cargoHash from error
+          nix build .#coolercontrol-ui-data  # Fix npmDepsHash from error
+          \`\`\`
+
+          ---
+          *Created automatically by check-upstream workflow.*
+          EOF
+          )"
+
+      - name: Create draft PR (build verification failed)
+        if: steps.update.outputs.status == 'hashes-updated' && steps.verify.outputs.verified != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.upstream.outputs.version }}"
+          OLD_VERSION="${{ steps.current.outputs.version }}"
+          BRANCH="auto-update/${NEW_VERSION}"
+
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "wip: update CoolerControl to ${NEW_VERSION} (build verification failed)"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update CoolerControl to ${NEW_VERSION}" \
+            --label "auto-update,needs-manual-fix" \
+            --draft \
+            --body "$(cat <<EOF
+          ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
+
+          [Release notes](https://gitlab.com/coolercontrol/coolercontrol/-/releases/${NEW_VERSION})
+
+          ⚠️ **Hashes updated but build verification failed.** Manual investigation required.
+
+          ---
+          *Created automatically by check-upstream workflow.*
           EOF
           )"
