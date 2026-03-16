@@ -9,7 +9,7 @@ Restructure the 1,900-line `cli/coolerctl.py` monolith into a proper Python pack
 ```
 coolerctl/
 ├── __init__.py        # Root CLI group, --version, --base-url, --json, registers all subcommands
-├── api.py             # SESSION, api(), api_upload(), api_raw(), ApiError, _load_token()
+├── api.py             # SESSION, DEFAULT_BASE, TOKEN_PATH, api(), api_upload(), api_raw(), ApiError, _load_token(), urllib3 warning suppression
 ├── output.py          # Colors, _c(), _use_color(), _temp_color(), fmt_json()
 ├── auth.py            # auth group + tokens group
 ├── devices.py         # devices group (list, settings, set-manual, set-profile, reset, pwm, lighting, lcd, asetek690)
@@ -21,6 +21,7 @@ coolerctl/
 ├── sensors.py         # custom-sensors group (list, show, create, update, delete, order)
 ├── settings.py        # settings group (show, update, devices, update-device, ui, update-ui)
 ├── plugins.py         # plugins group (list, config, update-config, ui-check, ui-file, lib)
+├── daemon.py          # Top-level: handshake, health, shutdown, acknowledge, status (+_print_status_entry)
 ├── streaming.py       # _stream_sse(), watch-status, watch-logs, watch-alerts, watch-modes, logs
 ├── shortcuts.py       # Top-level: fan, temps, fans, thinkpad-fan-control, detect
 ├── export.py          # _to_nix(), export-config command
@@ -72,25 +73,43 @@ No cross-dependencies between command modules.
 ## Dependencies Between Modules
 
 ```
-__init__.py --> all command modules (imports groups to register)
+__init__.py --> api.py (imports DEFAULT_BASE for --base-url default)
+__init__.py --> all command modules (imports groups/commands to register)
 all command modules --> api.py (HTTP calls)
 all command modules --> output.py (formatting)
-export.py --> api.py + output.py (uses api_raw too)
-streaming.py --> api.py (uses SESSION directly for SSE)
+export.py --> api.py (uses api(), api_raw())
+streaming.py --> api.py (uses SESSION, _load_token directly for SSE)
 ```
+
+Note: `export.py` does not depend on `output.py` — `_to_nix` is a self-contained serializer.
 
 ## Nix Changes
 
 - `flake.nix`: Change `./cli/package.nix` to `./coolerctl/package.nix`
-- `setup.py`: `py_modules=["coolerctl"]` → `packages=["coolerctl"]` with `package_dir={"coolerctl": "."}`, entry point stays `coolerctl:main`
+- `setup.py`: `py_modules=["coolerctl"]` → `packages=["coolerctl"]` with `package_dir={"coolerctl": "."}` (setup.py lives inside the package dir; Nix copies it as build root, so `.` is correct), entry point stays `coolerctl:main`
 - `package.nix`: `src = ./.` unchanged (relative to new dir), `format = "setuptools"` unchanged
 
 ## Testing
 
-Existing 19 tests updated with imports from the package:
-- `from coolerctl import cli, _load_token, api, ApiError` → `from coolerctl import cli, main` and `from coolerctl.api import api, ApiError, _load_token`
-- Mock patches updated: `coolerctl.api` → `coolerctl.api.api`, etc.
-- No new tests — pure restructuring with no behavior changes
+Existing 19 tests updated. Key: `unittest.mock.patch` must target where the name is **looked up**, not where it is defined.
+
+Import updates:
+- `from coolerctl import cli` stays (cli is in `__init__.py`)
+- `from coolerctl.api import _load_token, ApiError`
+
+Mock patch target mapping:
+
+| Test Class | Old Target | New Target |
+|---|---|---|
+| TestLoadToken | `coolerctl.TOKEN_PATH` | `coolerctl.api.TOKEN_PATH` |
+| TestSpeedProfile | `coolerctl.api` | `coolerctl.profiles.api` |
+| TestSettingsFlags | `coolerctl.api` | `coolerctl.settings.api` |
+| TestApiErrorHandling (SESSION) | `coolerctl.SESSION` | `coolerctl.api.SESSION` |
+| TestApiErrorHandling (handshake) | `coolerctl.SESSION` | `coolerctl.api.SESSION` |
+| TestRootOptions (health) | `coolerctl.api` | `coolerctl.daemon.api` |
+| TestRootOptions (handshake) | `coolerctl.api` | `coolerctl.daemon.api` |
+
+No new tests — pure restructuring with no behavior changes.
 
 ## Migration
 
