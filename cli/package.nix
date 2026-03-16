@@ -17,7 +17,15 @@ python3Packages.buildPythonApplication {
     requests
   ];
 
-  doCheck = false;
+  nativeCheckInputs = with python3Packages; [
+    pytest
+  ];
+
+  checkPhase = ''
+    runHook preCheck
+    pytest test_coolerctl.py -v
+    runHook postCheck
+  '';
 
   meta = {
     homepage = "https://gitlab.com/coolercontrol/coolercontrol";
