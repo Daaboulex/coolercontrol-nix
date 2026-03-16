@@ -74,7 +74,6 @@ jobs:
 
           gh pr create \
             --title "chore: update flake.lock (${DATE})" \
-            --label "auto-update" \
             --body "$(cat <<EOF
           ## Flake lock update
 
