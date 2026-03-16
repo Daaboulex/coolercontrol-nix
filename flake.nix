@@ -11,7 +11,7 @@
         "aarch64-linux"
       ];
       forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
-      pkgsFor = system: import nixpkgs { inherit system; };
+      pkgsFor = system: import nixpkgs { localSystem.system = system; };
     in
     {
       packages = forEachSystem (
