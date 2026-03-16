@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-packages:
+    name: Build all packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build coolercontrold
+        run: nix build .#coolercontrold --no-link
+
+      - name: Build coolercontrol-ui-data
+        run: nix build .#coolercontrol-ui-data --no-link
+
+      - name: Build coolercontrol-gui
+        run: nix build .#coolercontrol-gui --no-link
+
+      - name: Build coolerctl (includes pytest)
+        run: nix build .#coolerctl --no-link
+
+  flake-check:
+    name: Flake check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: nix flake check
+        run: nix flake check
+
+  format-check:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Check formatting
+        run: nix fmt -- --fail-on-change
