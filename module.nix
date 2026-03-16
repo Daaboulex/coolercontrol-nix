@@ -25,10 +25,25 @@ in
       defaultText = lib.literalExpression "pkgs.coolercontrol.coolercontrol-gui";
       description = "The CoolerControl GUI package to use.";
     };
+
+    cli = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install the coolerctl CLI tool.";
+      };
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.coolercontrol.coolerctl;
+        defaultText = lib.literalExpression "pkgs.coolercontrol.coolerctl";
+        description = "The coolerctl CLI package to use.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ cfg.guiPackage ];
+    environment.systemPackages = [ cfg.guiPackage ] ++ lib.optional cfg.cli.enable cfg.cli.package;
 
     systemd = {
       packages = [ cfg.package ];
