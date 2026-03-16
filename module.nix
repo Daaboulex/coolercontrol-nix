@@ -57,6 +57,28 @@ in
           Environment = [
             "COOLERCONTROL_PLUGINS_PATH=/var/lib/coolercontrol/plugins"
           ];
+
+          # Filesystem protection
+          ProtectSystem = "strict";
+          ReadWritePaths = [ "/var/lib/coolercontrol" ];
+          PrivateTmp = true;
+          ProtectHome = true;
+
+          # Privilege restrictions
+          NoNewPrivileges = true;
+          ProtectKernelTunables = false; # needs sysfs/hwmon access
+          ProtectKernelModules = false; # needs kmod for hardware detection
+          ProtectControlGroups = true;
+
+          # Network (daemon listens on localhost)
+          RestrictAddressFamilies = [
+            "AF_UNIX"
+            "AF_INET"
+            "AF_INET6"
+          ];
+
+          # Device access (hwmon, USB coolers, GPU)
+          DevicePolicy = "auto";
         };
       };
     };

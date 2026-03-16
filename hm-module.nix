@@ -508,19 +508,20 @@ let
       TOKEN=$(cat "$TOKEN_FILE")
     fi
 
-    auth_args() {
-      if [[ -n "$TOKEN" ]]; then
-        echo "-H"
-        echo "Authorization: Bearer $TOKEN"
-      fi
-    }
+    # Write auth header to temp file so token is never in /proc/*/cmdline
+    AUTH_FILE=$(mktemp)
+    trap 'rm -f "$AUTH_FILE"' EXIT
+    if [[ -n "$TOKEN" ]]; then
+      printf -- '-H "Authorization: Bearer %s"\n' "$TOKEN" > "$AUTH_FILE"
+      chmod 600 "$AUTH_FILE"
+    fi
 
     api() {
       local method="$1" path="$2"
       shift 2
       ${curlCmd} -skf -X "$method" \
         -H "Content-Type: application/json" \
-        $(auth_args) \
+        --config "$AUTH_FILE" \
         "$@" \
         "''${URL}''${path}"
     }
@@ -531,7 +532,7 @@ let
       shift 3
       ${curlCmd} -skf -X "$method" \
         -H "Content-Type: $content_type" \
-        $(auth_args) \
+        --config "$AUTH_FILE" \
         "$@" \
         "''${URL}''${path}"
     }
