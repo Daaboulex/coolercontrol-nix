@@ -8,7 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from coolerctl import cli, _load_token, api, ApiError
+from coolerctl import cli
+from coolerctl.api import _load_token, ApiError
 
 
 # ── _load_token ──
@@ -18,16 +19,16 @@ class TestLoadToken:
     def test_reads_token_from_file(self, tmp_path):
         token_file = tmp_path / "token"
         token_file.write_text("my-secret-token\n")
-        with patch("coolerctl.TOKEN_PATH", str(token_file)):
+        with patch("coolerctl.api.TOKEN_PATH", str(token_file)):
             assert _load_token() == "my-secret-token"
 
     def test_returns_none_when_no_file(self, tmp_path):
-        with patch("coolerctl.TOKEN_PATH", str(tmp_path / "nonexistent")):
+        with patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")):
             with patch.dict(os.environ, {}, clear=True):
                 assert _load_token() is None
 
     def test_reads_from_env_when_no_file(self, tmp_path):
-        with patch("coolerctl.TOKEN_PATH", str(tmp_path / "nonexistent")):
+        with patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")):
             with patch.dict(os.environ, {"COOLERCONTROL_TOKEN": "env-token"}):
                 assert _load_token() == "env-token"
 
@@ -35,7 +36,7 @@ class TestLoadToken:
         """Verify the file handle leak fix — fd should be closed after read."""
         token_file = tmp_path / "token"
         token_file.write_text("test-token")
-        with patch("coolerctl.TOKEN_PATH", str(token_file)):
+        with patch("coolerctl.api.TOKEN_PATH", str(token_file)):
             _load_token()
         # If the handle leaked, this would still work, but we verify
         # by checking we can delete the file (not locked)
@@ -63,7 +64,7 @@ class TestSpeedProfile:
 
     def test_valid_speed_profile_parsed(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.profiles.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "profiles", "create", "Gaming",
@@ -81,7 +82,7 @@ class TestSpeedProfile:
 
     def test_speed_profile_rejects_duty_over_100(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.profiles.api") as mock_api:
             result = runner.invoke(cli, [
                 "profiles", "create", "Bad",
                 "--speed-profile", "30:150",
@@ -91,7 +92,7 @@ class TestSpeedProfile:
 
     def test_speed_profile_rejects_malformed_input(self):
         runner = CliRunner()
-        with patch("coolerctl.api"):
+        with patch("coolerctl.profiles.api"):
             result = runner.invoke(cli, [
                 "profiles", "create", "Bad",
                 "--speed-profile", "not-valid",
@@ -100,7 +101,7 @@ class TestSpeedProfile:
 
     def test_speed_profile_with_float_temps(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.profiles.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "profiles", "create", "Precise",
@@ -117,7 +118,7 @@ class TestSpeedProfile:
 class TestSettingsFlags:
     def test_apply_on_boot_true(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "settings", "update", "--apply-on-boot",
@@ -128,7 +129,7 @@ class TestSettingsFlags:
 
     def test_no_apply_on_boot(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "settings", "update", "--no-apply-on-boot",
@@ -139,7 +140,7 @@ class TestSettingsFlags:
 
     def test_poll_rate(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "settings", "update", "--poll-rate", "2.5",
@@ -150,7 +151,7 @@ class TestSettingsFlags:
 
     def test_multiple_flags_combined(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "settings", "update",
@@ -168,7 +169,7 @@ class TestSettingsFlags:
 
     def test_no_flags_shows_error(self):
         runner = CliRunner()
-        with patch("coolerctl.api"):
+        with patch("coolerctl.settings.api"):
             result = runner.invoke(cli, ["settings", "update"])
         assert result.exit_code != 0
         assert "No settings to update" in result.output
@@ -177,7 +178,7 @@ class TestSettingsFlags:
         json_file = tmp_path / "settings.json"
         json_file.write_text('{"poll_rate": 1.0, "compress": true}')
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
             result = runner.invoke(cli, [
                 "settings", "update", "--from-json", str(json_file),
@@ -193,7 +194,7 @@ class TestSettingsFlags:
 class TestApiErrorHandling:
     def test_connection_error_message(self):
         runner = CliRunner()
-        with patch("coolerctl.SESSION") as mock_session:
+        with patch("coolerctl.api.SESSION") as mock_session:
             import requests
             mock_session.request.side_effect = requests.ConnectionError()
             result = runner.invoke(cli, ["handshake"])
@@ -205,7 +206,7 @@ class TestApiErrorHandling:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"shake": True}
-        with patch("coolerctl.SESSION") as mock_session:
+        with patch("coolerctl.api.SESSION") as mock_session:
             mock_session.request.return_value = mock_resp
             result = runner.invoke(cli, ["handshake"])
         assert result.exit_code == 0
@@ -218,7 +219,7 @@ class TestApiErrorHandling:
 class TestRootOptions:
     def test_json_flag_passed_to_context(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.daemon.api") as mock_api:
             mock_api.return_value = {"status": "ok", "details": {}}
             result = runner.invoke(cli, ["--json", "health"])
         assert result.exit_code == 0
@@ -227,7 +228,7 @@ class TestRootOptions:
 
     def test_custom_base_url(self):
         runner = CliRunner()
-        with patch("coolerctl.api") as mock_api:
+        with patch("coolerctl.daemon.api") as mock_api:
             mock_api.return_value = {"shake": True}
             result = runner.invoke(cli, [
                 "--base-url", "https://myhost:9999", "handshake",

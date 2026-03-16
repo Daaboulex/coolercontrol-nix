@@ -3,7 +3,10 @@ from setuptools import setup
 setup(
     name="coolerctl",
     version="0.1.0",
-    py_modules=["coolerctl"],
+    # setup.py lives inside the package dir; Nix copies it as build root,
+    # so "." correctly points to the package source files.
+    packages=["coolerctl"],
+    package_dir={"coolerctl": "."},
     install_requires=[
         "click>=8.0",
         "requests>=2.28",

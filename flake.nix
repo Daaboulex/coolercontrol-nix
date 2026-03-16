@@ -34,7 +34,7 @@
             shared // { inherit (self.packages.${system}) coolercontrol-ui-data; }
           );
           coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix shared;
-          coolerctl = pkgs.callPackage ./cli/package.nix { };
+          coolerctl = pkgs.callPackage ./coolerctl/package.nix { };
           default = self.packages.${system}.coolercontrold;
         }
       );
