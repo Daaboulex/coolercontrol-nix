@@ -177,7 +177,6 @@ jobs:
 
           gh pr create \
             --title "Update CoolerControl to ${NEW_VERSION}" \
-            --label "auto-update" \
             --body "$(cat <<EOF
           ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
 
@@ -211,7 +210,6 @@ jobs:
 
           gh pr create \
             --title "Update CoolerControl to ${NEW_VERSION}" \
-            --label "auto-update,needs-manual-fix" \
             --draft \
             --body "$(cat <<EOF
           ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
@@ -247,7 +245,6 @@ jobs:
 
           gh pr create \
             --title "Update CoolerControl to ${NEW_VERSION}" \
-            --label "auto-update,needs-manual-fix" \
             --draft \
             --body "$(cat <<EOF
           ## Update CoolerControl ${OLD_VERSION} → ${NEW_VERSION}
