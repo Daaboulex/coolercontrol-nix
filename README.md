@@ -15,6 +15,25 @@ This flake packages CoolerControl **v4.0.1** from source (Rust daemon + Vue web 
 | `coolercontrol-ui` | Vue 3 / Vite | Web UI embedded in the daemon (served at `https://localhost:11987`) |
 | `coolercontrol` (GUI) | C++ / Qt6 WebEngine | Desktop app wrapping the web UI with system tray integration |
 
+## Binary Cache (optional)
+
+Pre-built packages are available via Cachix to avoid long compilation times:
+
+```bash
+cachix use coolercontrol-nix
+```
+
+Or add to your NixOS configuration:
+
+```nix
+nix.settings = {
+  substituters = [ "https://coolercontrol-nix.cachix.org" ];
+  trusted-public-keys = [ "coolercontrol-nix.cachix.org-1:FIXME_ADD_PUBLIC_KEY_HERE" ];
+};
+```
+
+> **Note**: The cache is populated by CI. You'll need to replace the public key above with the actual key from the Cachix cache page after setup.
+
 ## Usage
 
 ### 1. Add flake input
