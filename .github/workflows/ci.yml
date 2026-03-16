@@ -67,14 +67,7 @@ jobs:
       - name: nix flake check
         run: nix flake check
 
-  format-check:
-    name: Formatting
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: DeterminateSystems/nix-installer-action@v16
-
-      - name: Check formatting
-        run: nix fmt -- --fail-on-change
+  # Note: Formatting is enforced by pre-commit hooks (treefmt) locally.
+  # The flake does not export a formatter attribute, so nix fmt is not
+  # available in CI. This is fine — the pre-commit hook catches all
+  # formatting issues before commits reach the repo.
