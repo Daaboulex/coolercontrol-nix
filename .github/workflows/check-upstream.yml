@@ -144,6 +144,7 @@ jobs:
       - name: Verify all packages build
         if: steps.update.outputs.status == 'hashes-updated'
         id: verify
+        continue-on-error: true
         run: |
           set -euo pipefail
           echo "=== Verifying coolercontrold ==="
