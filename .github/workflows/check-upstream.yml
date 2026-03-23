@@ -258,3 +258,9 @@ jobs:
           *Created automatically by check-upstream workflow.*
           EOF
           )"
+
+      - name: Fail job if build verification failed
+        if: steps.update.outputs.status == 'hashes-updated' && steps.verify.outputs.verified != 'true'
+        run: |
+          echo "::error::Build verification failed for CoolerControl ${{ steps.upstream.outputs.version }}"
+          exit 1
