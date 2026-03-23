@@ -19,12 +19,12 @@
         let
           pkgs = pkgsFor system;
           shared = {
-            version = "4.0.1";
+            version = "4.1.0";
             src = pkgs.fetchFromGitLab {
               owner = "coolercontrol";
               repo = "coolercontrol";
-              rev = "4.0.1";
-              hash = "sha256-X8KEZARksSwmFEKnGnwZk9aQ0ND6fOsSelCIWPkEjN8=";
+              rev = "4.1.0";
+              hash = "sha256-v1enPMezagA3gcYD5EbC1ecTOXEsMLRGWIKzgDxzRWg=";
             };
           };
         in
