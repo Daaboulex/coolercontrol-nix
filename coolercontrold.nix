@@ -46,7 +46,10 @@ rustPlatform.buildRustPackage {
     # The crate has a @hwdata@ placeholder designed for build-time substitution
     # but nobody substitutes it — so pci.ids lookup fails on NixOS.
     # $cargoDepsCopy is set by cargoSetupPostUnpackHook during the unpack phase.
-    substituteInPlace "$cargoDepsCopy/pciid-parser-0.8.0/src/lib.rs" \
+    # Use find to handle both flat and source-registry-0 vendor layouts (Cargo <1.94 vs >=1.94).
+    local pciid_lib
+    pciid_lib=$(find "$cargoDepsCopy" -path '*/pciid-parser-*/src/lib.rs' -print -quit)
+    substituteInPlace "$pciid_lib" \
       --replace-fail '@hwdata@' '${hwdata}'
 
     # Patch plugin discovery to support COOLERCONTROL_PLUGINS_PATH environment variable.
