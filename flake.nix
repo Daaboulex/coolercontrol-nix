@@ -1,10 +1,20 @@
 {
   description = "CoolerControl — monitor and control your cooling devices on NixOS";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      git-hooks,
+    }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -51,5 +61,30 @@
       nixosModules.default = import ./module.nix;
 
       homeManagerModules.default = import ./hm-module.nix;
+
+      formatter = forEachSystem (system: (pkgsFor system).nixfmt-rfc-style);
+
+      checks = forEachSystem (system: {
+        pre-commit-check = git-hooks.lib.${system}.run {
+          src = self;
+          hooks = {
+            nixfmt-rfc-style.enable = true;
+          };
+        };
+      });
+
+      devShells = forEachSystem (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          default = pkgs.mkShell {
+            inherit (self.checks.${system}.pre-commit-check) shellHook;
+            buildInputs = self.checks.${system}.pre-commit-check.enabledPackages;
+            packages = [ pkgs.nil ];
+          };
+        }
+      );
     };
 }
