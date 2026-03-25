@@ -28,22 +28,25 @@
         system:
         let
           pkgs = pkgsFor system;
-          shared = {
-            version = "4.0.1";
-            src = pkgs.fetchFromGitLab {
-              owner = "coolercontrol";
-              repo = "coolercontrol";
-              rev = "4.0.1";
-              hash = "sha256-X8KEZARksSwmFEKnGnwZk9aQ0ND6fOsSelCIWPkEjN8=";
-            };
+          version = "4.1.0";
+          src = pkgs.fetchFromGitLab {
+            owner = "coolercontrol";
+            repo = "coolercontrol";
+            rev = version;
+            hash = "sha256-v1enPMezagA3gcYD5EbC1ecTOXEsMLRGWIKzgDxzRWg=";
           };
+          npmDepsHash = "sha256-AzRw6DuloOFC7VN7yM9czqxosfVIoXAltv2xHUxac7k=";
+          cargoHash = "sha256-rFwbHsGkKLD9UgkdTbxMIjARmU0Ewal1NIwlbzRL/vc=";
         in
         {
-          coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix shared;
-          coolercontrold = pkgs.callPackage ./coolercontrold.nix (
-            shared // { inherit (self.packages.${system}) coolercontrol-ui-data; }
-          );
-          coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix shared;
+          coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
+            inherit version src npmDepsHash;
+          };
+          coolercontrold = pkgs.callPackage ./coolercontrold.nix {
+            inherit version src cargoHash;
+            inherit (self.packages.${system}) coolercontrol-ui-data;
+          };
+          coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix { inherit version src; };
           coolerctl = pkgs.callPackage ./coolerctl/package.nix { };
           default = self.packages.${system}.coolercontrold;
         }
