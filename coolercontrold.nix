@@ -49,11 +49,8 @@ rustPlatform.buildRustPackage {
       --replace-fail '@hwdata@' '${hwdata}'
   '';
 
-  postInstall = ''
-    install -Dm444 "${src}/packaging/systemd/coolercontrold.service" -t "$out/lib/systemd/system"
-    substituteInPlace "$out/lib/systemd/system/coolercontrold.service" \
-      --replace-fail '/usr/bin' "$out/bin"
-  '';
+  # systemd unit is defined in module.nix — not shipped in the package
+  # (NixOS auto-discovers units in lib/systemd/system/ and overrides our module)
 
   postFixup = ''
     addDriverRunpath "$out/bin/coolercontrold"
