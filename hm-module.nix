@@ -552,20 +552,9 @@ let
     done
 
     # ── Ordering ──
-    ${lib.optionalString (cfg.profiles != { }) ''
-      echo "Setting profile order"
-      api POST "/profiles/order" -d '{"profiles": [${
-        lib.concatStringsSep "," (lib.mapAttrsToList (name: p: mkProfileJson name p) cfg.profiles)
-      }]}'
-    ''}
-
-    ${lib.optionalString (cfg.functions != { }) ''
-      echo "Setting function order"
-      api POST "/functions/order" -d '{"functions": [${
-        lib.concatStringsSep "," (lib.mapAttrsToList (name: f: mkFunctionJson name f) cfg.functions)
-      }]}'
-    ''}
-
+    # Note: profile/function order endpoints require full objects in 4.1.0+.
+    # Individual profiles/functions are applied via PUT below. Mode ordering
+    # is the only lightweight order endpoint (accepts just UIDs).
     ${lib.optionalString (cfg.modes != { }) ''
       echo "Setting mode order"
       api POST "/modes/order" -d '{"mode_uids": [${
