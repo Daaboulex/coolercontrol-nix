@@ -78,12 +78,27 @@ def auth_verify(ctx):
 def auth_set_password(ctx, current_password: str, new_password: str):
     """Set the daemon admin password."""
     import base64
-    # 4.1.0 API: new password goes in Basic Auth header, current in JSON body
-    auth_bytes = f"CCAdmin:{new_password}".encode("utf-8")
-    auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
-    api("POST", "/set-passwd", ctx.obj["base"],
-        json={"current_password": current_password},
-        headers={"Authorization": f"Basic {auth_b64}"})
+    base = ctx.obj["base"]
+
+    # Step 1: login with current password to get a session cookie
+    auth_current = base64.b64encode(f"CCAdmin:{current_password}".encode()).decode()
+    resp = SESSION.post(f"{base}/login",
+                        headers={"Authorization": f"Basic {auth_current}"}, timeout=10)
+    if resp.status_code != 200:
+        raise ApiError(f"Login failed (HTTP {resp.status_code}) — check your current password")
+
+    # Step 2: call /set-passwd with session cookie + new password in Basic Auth header
+    auth_new = base64.b64encode(f"CCAdmin:{new_password}".encode()).decode()
+    resp = SESSION.post(f"{base}/set-passwd", timeout=10,
+                        headers={"Authorization": f"Basic {auth_new}"},
+                        json={"current_password": current_password})
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("error", resp.text)
+        except (ValueError, AttributeError):
+            detail = resp.text
+        raise ApiError(f"API error {resp.status_code}: {detail}")
     click.echo("Password set")
 
 
