@@ -40,7 +40,11 @@ jobs:
           NEWV="${{ steps.update.outputs.new_version }}"
           PKG="${{ steps.update.outputs.package_name }}"
           git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
-          git commit -m "chore: update ${PKG} ${OLDV} → ${NEWV}"
+          API_NOTE=""
+          if [ "${{ steps.update.outputs.api_changes }}" = "true" ]; then
+            API_NOTE=$'\n\nAPI contract changes detected — see build log for details.'
+          fi
+          git commit -m "chore: update ${PKG} ${OLDV} → ${NEWV}${API_NOTE}"
           git push
 
       # Auto-close previous failure issues on success
