@@ -2,7 +2,7 @@
 
 NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
 
-This flake packages CoolerControl **v4.0.1** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
+This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
 
 > **Note**: This is a community packaging effort. CoolerControl is developed by [Guy Boldon](https://gitlab.com/codifryed).
 > nixpkgs ships an older version (3.1.1) — this flake tracks the latest upstream release.
@@ -82,7 +82,7 @@ programs.coolercontrol.enable = true;
 - **Desktop app**: `coolercontrol` binary with `.desktop` file and icons — launch from your application menu
 - **Web UI**: Available at `https://localhost:11987` (TLS enabled by default in v4.0+)
 - **GPU driver access**: `addDriverRunpath` ensures the daemon can detect NVIDIA/AMD GPUs at runtime
-- **PCI device names**: `hwdata` is patched into the vendored `pciid-parser` crate at build time so the daemon can resolve PCI IDs to human-readable device names on NixOS
+- **PCI device names**: `hwdata` is patched into the daemon's inline `pci_ids` module at build time so it can resolve PCI IDs to human-readable device names on NixOS
 
 ## Hardware support
 
@@ -405,11 +405,15 @@ The output documents all devices, profiles, functions, modes, alerts, custom sen
 
 ### PCI ID database
 
-The upstream `pciid-parser` Rust crate hardcodes Linux FHS paths (`/usr/share/hwdata/pci.ids`) which don't exist on NixOS. This flake patches the vendored crate at build time to substitute the `@hwdata@` placeholder with the Nix store path to `hwdata`, enabling proper PCI device name resolution.
+The daemon's inline `pci_ids` module hardcodes Linux FHS paths (`/usr/share/hwdata/pci.ids`) which don't exist on NixOS. This flake patches the `@hwdata@` placeholder at build time with the Nix store path to `hwdata`, enabling proper PCI device name resolution.
+
+### Configuration directory
+
+The daemon uses `/etc/coolercontrol` by default for config, plugins, and state. Override via the `CC_CONFIG_DIR` environment variable if needed.
 
 ## Version tracking
 
-This flake includes a GitHub Actions workflow that checks for new upstream releases twice per week (Monday/Thursday) and creates an issue when an update is available.
+This flake includes GitHub Actions workflows that automatically update to new upstream releases twice per week (Monday/Thursday). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
 
 ## Repository structure
 
@@ -422,12 +426,15 @@ coolercontrol-nix/
 ├── module.nix                 # NixOS module (systemd service + GUI)
 ├── hm-module.nix              # Home Manager module (declarative API config)
 ├── export-config.sh           # Export daemon state as Nix attrset
-├── cli/                       # coolerctl CLI (Python, wraps REST API)
+├── coolerctl/                 # coolerctl CLI (Python, wraps REST API)
+├── scripts/update.sh          # Standardized auto-update script
+├── .github/update.json        # Update configuration (upstream, hashes, verify)
 ├── README.md
 ├── LICENSE
-└── .github/
-    └── workflows/
-        └── check-upstream.yml # Automated upstream release tracking
+└── .github/workflows/
+    ├── ci.yml                 # PR/push: eval, format, build, verify
+    ├── update.yml             # Scheduled: detect upstream, update hashes, push or issue
+    └── maintenance.yml        # Weekly: flake.lock update, stale branch cleanup
 ```
 
 ## CLI Utility
@@ -449,8 +456,8 @@ coolerctl temps
 
 ## Known Issues
 
-- **Plugins**: To add plugins on NixOS, place their `manifest.toml` and files in `/var/lib/coolercontrol/plugins/<plugin_id>/`. The daemon is patched to search this mutable directory. Note that the daemon includes `nodejs` and `python3` in its environment to support common plugins.
-- **PCI Device Names**: Resolved via a patch to `pciid-parser` that points to the Nix store `hwdata` path.
+- **Plugins**: Plugin directory is `<config-dir>/plugins/` (default `/etc/coolercontrol/plugins/`). Place plugin `manifest.toml` and files there. Override the base config directory via the `CC_CONFIG_DIR` environment variable. The daemon includes `nodejs` and `python3` in its environment to support common plugins.
+- **PCI Device Names**: Resolved via a build-time patch to the daemon's inline `pci_ids` module that substitutes the Nix store `hwdata` path.
 
 ## Credits
 

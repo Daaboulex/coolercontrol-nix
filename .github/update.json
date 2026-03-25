@@ -8,8 +8,8 @@
   "packageFile": "flake.nix",
   "hashes": [
     "hash",
-    "cargoHash",
-    "npmDepsHash"
+    "npmDepsHash",
+    "cargoHash"
   ],
   "verify": {
     "binary": null,
