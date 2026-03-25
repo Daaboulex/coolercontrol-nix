@@ -49,8 +49,16 @@ rustPlatform.buildRustPackage {
       --replace-fail '@hwdata@' '${hwdata}'
   '';
 
-  # systemd unit is defined in module.nix — not shipped in the package
-  # (NixOS auto-discovers units in lib/systemd/system/ and overrides our module)
+  postInstall = ''
+    install -Dm444 "${src}/packaging/systemd/coolercontrold.service" -t "$out/lib/systemd/system"
+    substituteInPlace "$out/lib/systemd/system/coolercontrold.service" \
+      --replace-fail '/usr/bin' "$out/bin"
+
+    # NixOS: redirect config/plugins/state to StateDirectory (/var/lib/coolercontrol)
+    # so the daemon works with ProtectSystem=strict (can't write to /etc)
+    sed -i '/\[Service\]/a Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"' \
+      "$out/lib/systemd/system/coolercontrold.service"
+  '';
 
   postFixup = ''
     addDriverRunpath "$out/bin/coolercontrold"
