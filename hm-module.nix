@@ -555,21 +555,21 @@ let
     ${lib.optionalString (cfg.profiles != { }) ''
       echo "Setting profile order"
       api POST "/profiles/order" -d '{"profiles": [${
-        lib.concatStringsSep "," (lib.mapAttrsToList (_name: p: "{\"uid\":\"${p.uid}\"}") cfg.profiles)
+        lib.concatStringsSep "," (lib.mapAttrsToList (name: p: mkProfileJson name p) cfg.profiles)
       }]}'
     ''}
 
     ${lib.optionalString (cfg.functions != { }) ''
       echo "Setting function order"
       api POST "/functions/order" -d '{"functions": [${
-        lib.concatStringsSep "," (lib.mapAttrsToList (_name: f: "{\"uid\":\"${f.uid}\"}") cfg.functions)
+        lib.concatStringsSep "," (lib.mapAttrsToList (name: f: mkFunctionJson name f) cfg.functions)
       }]}'
     ''}
 
     ${lib.optionalString (cfg.modes != { }) ''
       echo "Setting mode order"
-      api POST "/modes/order" -d '{"modes": [${
-        lib.concatStringsSep "," (lib.mapAttrsToList (_name: m: "{\"uid\":\"${m.uid}\"}") cfg.modes)
+      api POST "/modes/order" -d '{"mode_uids": [${
+        lib.concatStringsSep "," (lib.mapAttrsToList (_name: m: "\"${m.uid}\"") cfg.modes)
       }]}'
     ''}
 
