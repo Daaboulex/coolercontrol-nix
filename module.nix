@@ -45,38 +45,48 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.guiPackage ] ++ lib.optional cfg.cli.enable cfg.cli.package;
 
-    systemd = {
-      packages = [ cfg.package ];
-      services.coolercontrold = {
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = {
-          StateDirectory = "coolercontrol";
-          Environment = [
-            "CC_CONFIG_DIR=/var/lib/coolercontrol"
-          ];
+    systemd.services.coolercontrold = {
+      description = "CoolerControl Daemon";
+      after = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
 
-          # Filesystem protection
-          ProtectSystem = "strict";
-          ReadWritePaths = [ "/var/lib/coolercontrol" ];
-          PrivateTmp = true;
-          ProtectHome = true;
+      environment = {
+        CC_LOG = "INFO";
+        CC_CONFIG_DIR = "/var/lib/coolercontrol";
+      };
 
-          # Privilege restrictions
-          NoNewPrivileges = true;
-          ProtectKernelTunables = false; # needs sysfs/hwmon access
-          ProtectKernelModules = false; # needs kmod for hardware detection
-          ProtectControlGroups = true;
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${cfg.package}/bin/coolercontrold";
+        Restart = "always";
+        RestartSec = 1;
+        TimeoutStopSec = 10;
+        StartLimitIntervalSec = 60;
+        StartLimitBurst = 10;
 
-          # Network (daemon listens on localhost)
-          RestrictAddressFamilies = [
-            "AF_UNIX"
-            "AF_INET"
-            "AF_INET6"
-          ];
+        StateDirectory = "coolercontrol";
 
-          # Device access (hwmon, USB coolers, GPU)
-          DevicePolicy = "auto";
-        };
+        # Filesystem protection
+        ProtectSystem = "strict";
+        ReadWritePaths = [ "/var/lib/coolercontrol" ];
+        PrivateTmp = true;
+        ProtectHome = true;
+
+        # Privilege restrictions
+        NoNewPrivileges = true;
+        ProtectKernelTunables = false; # needs sysfs/hwmon access
+        ProtectKernelModules = false; # needs kmod for hardware detection
+        ProtectControlGroups = true;
+
+        # Network (daemon listens on localhost)
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_INET"
+          "AF_INET6"
+        ];
+
+        # Device access (hwmon, USB coolers, GPU)
+        DevicePolicy = "auto";
       };
     };
   };
