@@ -49,13 +49,10 @@ in
       packages = [ cfg.package ];
       services.coolercontrold = {
         wantedBy = [ "multi-user.target" ];
-        preStart = ''
-          mkdir -p /var/lib/coolercontrol/plugins
-        '';
         serviceConfig = {
           StateDirectory = "coolercontrol";
           Environment = [
-            "COOLERCONTROL_PLUGINS_PATH=/var/lib/coolercontrol/plugins"
+            "CC_CONFIG_DIR=/var/lib/coolercontrol"
           ];
 
           # Filesystem protection
