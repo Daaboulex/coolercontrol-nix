@@ -309,5 +309,26 @@ fi
 # Clean up build artifact
 rm -f result
 
+# --- API contract diff ---
+# Extract OpenAPI spec from new source and compare against baseline
+SRC_PATH=$(nix eval .#default.src.outPath --raw 2>/dev/null || true)
+if [ -n "$SRC_PATH" ] && [ -f "$SRC_PATH/openapi/openapi.json" ] && [ -f "api-schema.json" ]; then
+  log "Checking API contract changes..."
+  API_DIFF=$(bash scripts/api-diff.sh api-schema.json "$SRC_PATH/openapi/openapi.json" 2>&1 || true)
+  if [ -n "$API_DIFF" ]; then
+    log "$API_DIFF"
+    output "api_changes" "true"
+    # Update baseline for next run
+    cp "$SRC_PATH/openapi/openapi.json" api-schema.json
+  else
+    output "api_changes" "false"
+    cp "$SRC_PATH/openapi/openapi.json" api-schema.json
+  fi
+elif [ -n "$SRC_PATH" ] && [ -f "$SRC_PATH/openapi/openapi.json" ]; then
+  log "No baseline spec — creating initial api-schema.json"
+  cp "$SRC_PATH/openapi/openapi.json" api-schema.json
+  output "api_changes" "false"
+fi
+
 log "Update verified: $CURRENT_VERSION → $LATEST_VERSION"
 exit 0
