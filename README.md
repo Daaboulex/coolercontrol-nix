@@ -5,36 +5,9 @@ NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontr
 This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
 
 > **Note**: This is a community packaging effort. CoolerControl is developed by [Guy Boldon](https://gitlab.com/codifryed).
-> nixpkgs ships an older version (3.1.1) — this flake tracks the latest upstream release.
+> nixpkgs ships an older version — this flake tracks the latest upstream release.
 
-## Components
-
-| Component | Technology | Description |
-|---|---|---|
-| `coolercontrold` | Rust | System daemon — hardware detection, fan/pump control, web UI server, liquidctl integration |
-| `coolercontrol-ui` | Vue 3 / Vite | Web UI embedded in the daemon (served at `https://localhost:11987`) |
-| `coolercontrol` (GUI) | C++ / Qt6 WebEngine | Desktop app wrapping the web UI with system tray integration |
-
-## Binary Cache (optional)
-
-Pre-built packages are available via Cachix to avoid long compilation times:
-
-```bash
-cachix use coolercontrol-nix
-```
-
-Or add to your NixOS configuration:
-
-```nix
-nix.settings = {
-  substituters = [ "https://coolercontrol-nix.cachix.org" ];
-  trusted-public-keys = [ "coolercontrol-nix.cachix.org-1:FIXME_ADD_PUBLIC_KEY_HERE" ];
-};
-```
-
-> **Note**: The cache is populated by CI. You'll need to replace the public key above with the actual key from the Cachix cache page after setup.
-
-## Usage
+## Quick Start
 
 ### 1. Add flake input
 
@@ -54,37 +27,244 @@ nixpkgs.overlays = [
 ];
 ```
 
-### 3. Import the NixOS module
+### 3. Enable CoolerControl
 
-```nix
-imports = [
-  inputs.coolercontrol.nixosModules.default
-];
-```
-
-### 4. Enable CoolerControl
+nixpkgs already ships a `programs.coolercontrol` NixOS module. With the overlay providing up-to-date packages, just enable it:
 
 ```nix
 programs.coolercontrol.enable = true;
 ```
 
-## NixOS module options
+> **Alternative**: If you prefer to use this flake's NixOS module instead of nixpkgs', import `inputs.coolercontrol.nixosModules.default` and skip step 2.
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `programs.coolercontrol.enable` | bool | `false` | Enable CoolerControl daemon and GUI |
-| `programs.coolercontrol.package` | package | `pkgs.coolercontrol.coolercontrold` | The coolercontrold package to use |
-| `programs.coolercontrol.guiPackage` | package | `pkgs.coolercontrol.coolercontrol-gui` | The CoolerControl GUI package to use |
+### 4. (Optional) Add the Home Manager module
 
-## What gets installed
+For declarative profiles, modes, functions, alerts, and settings:
 
-- **System service**: `coolercontrold.service` — runs the daemon as root with access to hwmon, NVIDIA (NVML), AMD (libdrm), and liquidctl devices
-- **Desktop app**: `coolercontrol` binary with `.desktop` file and icons — launch from your application menu
-- **Web UI**: Available at `https://localhost:11987` (TLS enabled by default in v4.0+)
-- **GPU driver access**: `addDriverRunpath` ensures the daemon can detect NVIDIA/AMD GPUs at runtime
-- **PCI device names**: `hwdata` is patched into the daemon's inline `pci_ids` module at build time so it can resolve PCI IDs to human-readable device names on NixOS
+```nix
+home-manager.sharedModules = [
+  inputs.coolercontrol.homeManagerModules.default
+];
+```
 
-## Hardware support
+### 5. Rebuild
+
+```bash
+sudo nixos-rebuild switch
+```
+
+## Post-Install Setup
+
+### First run
+
+After rebuilding, the daemon starts automatically. Verify:
+
+```bash
+systemctl status coolercontrold
+journalctl -u coolercontrold -f
+```
+
+The web UI is at `https://localhost:11987` (TLS with self-signed cert). Launch the desktop app with `coolercontrol`.
+
+### Authentication
+
+The daemon starts with a default password (`coolAdmin`). To set your own:
+
+```bash
+coolerctl auth set-password
+# Current password: coolAdmin
+# New password: <your password>
+```
+
+Then save a bearer token for CLI and Home Manager use:
+
+```bash
+coolerctl auth login
+# Password: <your password>
+# Token saved to ~/.config/coolerctl/token
+```
+
+The Home Manager apply service reads this token automatically. **You must run `coolerctl auth login` after every password change.**
+
+### Configuration directory
+
+The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/var/lib/coolercontrol/` (set via `CC_CONFIG_DIR` in the systemd unit). This path is managed by systemd's `StateDirectory`.
+
+> **Migrating from an older version**: If you previously ran CoolerControl without this flake, your config may be at `/etc/coolercontrol/`. Copy it over:
+> ```bash
+> sudo systemctl stop coolercontrold
+> sudo cp -a /etc/coolercontrol/* /var/lib/coolercontrol/
+> sudo systemctl start coolercontrold
+> ```
+
+## Components
+
+| Component | Technology | Description |
+|---|---|---|
+| `coolercontrold` | Rust | System daemon — hardware detection, fan/pump control, web UI server |
+| `coolercontrol-ui` | Vue 3 / Vite | Web UI embedded in the daemon (`https://localhost:11987`) |
+| `coolercontrol` (GUI) | C++ / Qt6 WebEngine | Desktop app wrapping the web UI |
+| `coolerctl` | Python | CLI wrapping the daemon's REST API |
+
+## CLI usage
+
+The `coolerctl` CLI wraps the daemon's REST API. It's installed automatically when `myModules.home.coolercontrol.enable = true`.
+
+```bash
+# Authentication
+coolerctl auth login              # Save bearer token
+coolerctl auth set-password       # Change daemon password
+coolerctl auth status             # Check if token is configured
+
+# Quick status
+coolerctl status                  # System overview
+coolerctl fans                    # Fan speeds
+coolerctl temps                   # Temperatures
+
+# Profiles & functions
+coolerctl profiles list
+coolerctl functions list
+coolerctl modes list
+
+# Export current config as Nix (for Home Manager)
+coolerctl export-config
+```
+
+## Home Manager Module
+
+Declaratively configure CoolerControl profiles, functions, modes, alerts, and settings. The daemon runs as a NixOS system service — this module applies state via the REST API on login.
+
+### How it works
+
+1. You declare profiles/functions/modes/settings in Nix
+2. On login, a systemd user service (`coolercontrol-apply.service`) sends them to the daemon via REST API
+3. The daemon persists changes to `/var/lib/coolercontrol/`
+
+**Prerequisites**:
+- The daemon must be running (`programs.coolercontrol.enable = true`)
+- A bearer token must exist at `~/.config/coolerctl/token` (run `coolerctl auth login`)
+
+### Debugging the apply service
+
+```bash
+# Check status
+systemctl --user status coolercontrol-apply
+
+# View logs (shows exact HTTP errors with status codes)
+journalctl --user -u coolercontrol-apply -e
+
+# Manually re-apply after fixing config
+systemctl --user restart coolercontrol-apply
+```
+
+Common errors:
+- **HTTP 401 "Invalid Credentials"**: Run `coolerctl auth login` to refresh the token
+- **HTTP 400 "duty_minimum must be greater than 0"**: `duty_minimum` must be >= 1 in 4.1.0+
+- **HTTP 422 "missing field X"**: A required field was not provided (check the example below)
+- **"Daemon not reachable after 30s"**: The daemon isn't running — check `systemctl status coolercontrold`
+
+### Example configuration
+
+```nix
+# home/hosts/<hostname>/coolercontrol/default.nix
+{
+  myModules.home.coolercontrol.settings = {
+    enable = true;
+
+    profiles = {
+      default-profile = {
+        uid = "0";
+        name = "Default Profile";
+        p_type = "Default";
+        extra = {
+          function_uid = "0";  # Required in 4.1.0+
+        };
+      };
+      my-profile = {
+        uid = "abc123";  # from coolerctl profiles list
+        name = "Silent";
+        p_type = "Graph";
+        speed_profile = [
+          { temp = 30; duty = 25; }
+          { temp = 50; duty = 40; }
+          { temp = 70; duty = 70; }
+          { temp = 85; duty = 100; }
+        ];
+        extra = {
+          function_uid = "def456";
+        };
+      };
+    };
+
+    functions = {
+      default-function = {
+        uid = "0";
+        name = "Default Function";
+        duty_minimum = 1;   # Must be >= 1 in 4.1.0+
+        duty_maximum = 100;
+      };
+      my-function = {
+        uid = "def456";
+        name = "Smooth Response";
+        duty_minimum = 2;
+        duty_maximum = 100;
+        response_delay = 3;
+        deviance = 2.0;
+        only_downward = false;
+        sample_window = 6;
+      };
+    };
+
+    modes = {
+      default = {
+        uid = "jkl012";
+        name = "Default Mode";
+        device_settings = {
+          "<device-uid>" = {
+            "fan1" = { profile_uid = "abc123"; };
+          };
+        };
+      };
+    };
+
+    # Activate a mode on login
+    activeMode = "jkl012";
+
+    # Global daemon settings
+    settings = {
+      apply_on_boot = true;
+      no_init = false;
+      startup_delay = 2;
+      thinkpad_full_speed = false;
+      handle_dynamic_temps = false;
+      liquidctl_integration = true;
+      hide_duplicate_devices = true;
+      compress = true;
+      poll_rate = 1.0;
+      drivetemp_suspend = true;
+      allow_unencrypted = false;
+    };
+  };
+}
+```
+
+### Exporting current config
+
+Use `coolerctl export-config` to snapshot the daemon's current state as a Nix attrset. Copy the output directly into your Home Manager configuration.
+
+### 4.1.0 API requirements
+
+The 4.1.0 API is stricter than 4.0.x. Key differences:
+
+| Field | Requirement |
+|---|---|
+| `function_uid` | Required on profiles (use `extra.function_uid`) |
+| `duty_minimum` | Must be >= 1 (was allowed to be 0) |
+| `member_profile_uids` | Required on profiles (defaults to `[]`) |
+| `f_type` | Required on functions (defaults to `"Identity"`) |
+| Bearer token | Required for write operations when password is set |
+
+## Hardware Support
 
 CoolerControl detects and controls devices through:
 
@@ -95,327 +275,37 @@ CoolerControl detects and controls devices through:
 
 ### Kernel modules for motherboard fan control
 
-CoolerControl can only see fans exposed by loaded hwmon drivers. GPU fans (amdgpu/nvidia) are auto-detected, but **motherboard fan headers require the appropriate Super I/O kernel module** to be loaded. Without it, CoolerControl will only show GPU fans.
-
-Most motherboards use a Nuvoton or ITE Super I/O chip. Add the correct module to your NixOS config:
+Motherboard fan headers require the appropriate Super I/O kernel module:
 
 ```nix
-# Nuvoton (most ASUS, MSI, Gigabyte boards — NCT6775/6776/6779/6791/6796/6798/6799)
+# Nuvoton (most ASUS, MSI, Gigabyte boards)
 boot.kernelModules = [ "nct6775" ];
 
-# ITE (some Gigabyte, ASRock boards — IT8688E, IT8689E, etc.)
+# ITE (some Gigabyte, ASRock boards)
 boot.kernelModules = [ "it87" ];
 ```
 
-You may also need this kernel parameter for ASUS boards (allows the driver to access ACPI-claimed I/O ports):
+ASUS boards may also need:
 
 ```nix
 boot.kernelParams = [ "acpi_enforce_resources=lax" ];
 ```
 
-To identify your chip, run `sudo modprobe nct6775 && sensors` or `sudo modprobe it87 && sensors` and check which one exposes fan readings. See the [CoolerControl hardware support docs](https://docs.coolercontrol.org/hardware-support.html) for details.
-
-## Verification
-
-After rebuilding:
-
-```bash
-# Check the service is running
-systemctl status coolercontrold
-
-# View daemon logs
-journalctl -u coolercontrold -f
-
-# Open the web UI
-xdg-open https://localhost:11987
-
-# Launch the desktop app
-coolercontrol
-```
-
-## CLI usage
-
-The `coolerctl` CLI wraps the daemon's REST API for scripting and automation:
-
-```bash
-# List detected devices and their channels
-coolerctl devices list
-
-# Show current temperatures
-coolerctl temps
-
-# Show fan speeds
-coolerctl fans
-
-# Watch live status stream
-coolerctl watch-status
-
-# List profiles (fan curves)
-coolerctl profiles list
-
-# Create a profile with a fixed speed
-coolerctl profiles create --name "Silent" --speed-fixed 30
-
-# Create a profile with a temperature curve
-coolerctl profiles create --name "Custom" \
-  --speed-profile '[{"temp": 30, "duty": 20}, {"temp": 60, "duty": 50}, {"temp": 80, "duty": 100}]'
-
-# List and activate modes
-coolerctl modes list
-coolerctl modes activate <mode-uid>
-
-# List functions
-coolerctl functions list
-
-# Manage alerts
-coolerctl alerts list
-coolerctl alerts create --channel "CPU" --threshold 90
-
-# Show global settings
-coolerctl settings show
-
-# Authenticate (if daemon has a password set)
-coolerctl auth login
-```
-
-## Home Manager module
-
-Declaratively configure CoolerControl profiles, functions, modes, alerts, and settings through Home Manager. The daemon runs as a NixOS system service — this module applies user-facing state via the REST API on login.
-
-### Import
-
-```nix
-# In your flake, add to Home Manager sharedModules:
-home-manager.sharedModules = [
-  inputs.coolercontrol.homeManagerModules.default
-];
-```
-
-### Example configuration
-
-```nix
-programs.coolercontrol = {
-  enable = true;
-
-  # Connect to daemon (HTTPS with self-signed cert by default)
-  url = "https://localhost:11987";
-
-  # Fan curve profiles
-  profiles.silent = {
-    uid = "abc123";  # from coolerctl profiles list
-    name = "Silent";
-    p_type = "Fixed";
-    speed_fixed = 30;
-  };
-
-  profiles.gaming = {
-    uid = "def456";
-    name = "Gaming";
-    p_type = "Graph";
-    speed_profile = [
-      { temp = 30; duty = 25; }
-      { temp = 50; duty = 40; }
-      { temp = 70; duty = 70; }
-      { temp = 85; duty = 100; }
-    ];
-    extra.function_uid = "ghi789";
-  };
-
-  # Response functions — control how profiles react to temperature changes
-  functions.smooth = {
-    uid = "ghi789";
-    name = "Smooth Response";
-    duty_minimum = 20;
-    duty_maximum = 100;
-    response_delay = 3;     # seconds before reacting
-    deviance = 2;            # °C hysteresis
-    only_downward = false;   # allow speed increases
-    sample_window = 6;       # average temps over N seconds
-  };
-
-  # Modes — assign profiles to specific device channels
-  modes.default = {
-    uid = "jkl012";
-    name = "Default Mode";
-    device_settings = {
-      "<device-uid>" = {
-        "fan1" = { profile_uid = "abc123"; };
-      };
-    };
-  };
-
-  # Activate a mode on login
-  activeMode = "jkl012";
-
-  # Per-device settings (manual speed, profile assignment, lighting, LCD)
-  devices.my-gpu = {
-    uid = "97910386...";
-    channels.fan1 = {
-      profile_uid = "abc123";
-      lighting = {
-        mode = "Static";
-        color = "#ff0000";
-      };
-    };
-  };
-
-  # Custom sensors (Mix, File, etc.)
-  customSensors.ram-aggregator = {
-    id = "sensor1";
-    cs_type = "Mix";
-    mix_function = "Max";
-    sources = [
-      { temp_source = { temp_name = "temp1"; device_uid = "93a9b924..."; }; weight = 1; }
-      { temp_source = { temp_name = "temp1"; device_uid = "601e430e..."; }; weight = 1; }
-    ];
-  };
-
-  # Plugin configurations
-  plugins.coolerdash = {
-    id = "coolerdash";
-    config = ''
-      # raw plugin config text
-    '';
-  };
-
-  # Temperature alerts
-  alerts = [
-    { channel = "CPU"; threshold_celsius = 95; trigger = "above"; }
-  ];
-
-  # Global daemon settings (all 11 fields)
-  settings = {
-    apply_on_boot = true;          # re-apply profiles on boot
-    no_init = false;               # skip device init (debugging only)
-    startup_delay = 2;             # seconds to wait before applying
-    thinkpad_full_speed = false;   # ThinkPad fan override
-    handle_dynamic_temps = false;  # handle hotplug temp sources
-    liquidctl_integration = true;  # enable liquidctl for AIOs
-    hide_duplicate_devices = true; # hide duplicate device entries
-    compress = true;               # compress API responses
-    poll_rate = 1.0;               # sensor poll interval (0.5-5.0s)
-    drivetemp_suspend = true;      # skip drivetemp when drive sleeping
-    allow_unencrypted = false;     # require HTTPS
-  };
-
-  # Additional commands after config is applied
-  extraCommands = [ ];
-};
-```
-
-The module creates a systemd user service (`coolercontrol-apply.service`) that waits for the daemon to become reachable, then applies all declared configuration via the REST API.
-
-## Exporting configuration
-
-The `coolerctl` CLI can snapshot the daemon's current state as a Nix attrset for direct use in Home Manager:
-
-```bash
-# Recommended: Using the built-in CLI command
-coolerctl export-config
-
-# Or use the standalone script
-./export-config.sh
-
-# With password authentication
-coolerctl --base-url https://localhost:11987 export-config  # CLI will use saved token
-./export-config.sh --password <password>
-```
-
-The output documents all devices, profiles, functions, modes, alerts, custom sensors, and global settings. It is designed to be 1:1 compatible with the Home Manager module — you can copy and paste the output directly into your configuration.
-
-## Home Manager options reference
-
-### Top-level options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `enable` | bool | `false` | Enable declarative CoolerControl configuration |
-| `url` | str | `"https://localhost:11987"` | Daemon HTTPS endpoint |
-| `profiles` | attrsOf submodule | `{}` | Fan curve profiles |
-| `functions` | attrsOf submodule | `{}` | Response function definitions |
-| `modes` | attrsOf submodule | `{}` | Device-channel-profile assignments |
-| `activeMode` | nullOr str | `null` | Mode UID to activate on login |
-| `devices` | attrsOf submodule | `{}` | Per-device/channel manual settings and lighting |
-| `plugins` | attrsOf submodule | `{}` | Plugin configurations |
-| `customSensors` | attrsOf submodule | `{}` | Custom aggregated or file sensors |
-| `alerts` | listOf submodule | `[]` | Temperature threshold alerts |
-| `settings` | nullOr submodule | `null` | Global daemon settings |
-| `extraCommands` | listOf str | `[]` | Additional commands after applying config |
-
-### Profile submodule
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `uid` | str | — | Daemon-assigned UUID |
-| `name` | str | — | Display name |
-| `p_type` | str | — | Profile type: `"Default"`, `"Fixed"`, `"Graph"`, `"Mix"` |
-| `speed_fixed` | int | `0` | Fixed duty percentage (for `"Fixed"` type) |
-| `speed_profile` | listOf {temp, duty} | `[]` | Temperature curve points (for `"Graph"` type) |
-| `extra` | attrs | `{}` | Additional fields (e.g. `function_uid`) |
-
-### Function submodule
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `uid` | str | — | Daemon-assigned UUID |
-| `name` | str | — | Display name |
-| `duty_minimum` | int | `0` | Minimum fan duty % |
-| `duty_maximum` | int | `100` | Maximum fan duty % |
-| `response_delay` | int | `0` | Seconds before responding to temp change |
-| `deviance` | int | `0` | Temperature hysteresis in °C |
-| `only_downward` | bool | `false` | Only allow downward speed changes |
-| `sample_window` | int | `0` | Temperature averaging window in seconds |
-| `extra` | attrs | `{}` | Additional fields |
-
-### Mode submodule
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `uid` | str | — | Daemon-assigned UUID |
-| `name` | str | — | Display name |
-| `device_settings` | attrsOf (attrsOf attrs) | `{}` | Device UID → channel → profile assignment |
-| `extra` | attrs | `{}` | Additional fields |
-
-### Alert submodule
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `channel` | str | — | Temperature source channel name |
-| `threshold_celsius` | int | — | Trigger temperature in °C |
-| `trigger` | str | `"above"` | Trigger direction: `"above"` or `"below"` |
-| `extra` | attrs | `{}` | Additional fields |
-
-### Settings submodule
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `apply_on_boot` | bool | `true` | Re-apply profiles/modes on system boot |
-| `no_init` | bool | `false` | Skip device initialisation on daemon start |
-| `startup_delay` | int | `2` | Seconds to wait after boot before applying |
-| `thinkpad_full_speed` | bool | `false` | Allow fans to exceed firmware limits (ThinkPad only) |
-| `handle_dynamic_temps` | bool | `false` | Handle dynamically appearing temp sources |
-| `liquidctl_integration` | bool | `true` | Enable liquidctl for AIO coolers |
-| `hide_duplicate_devices` | bool | `true` | Hide duplicate device entries |
-| `compress` | bool | `true` | Compress API responses |
-| `poll_rate` | float | `1.0` | Sensor polling interval in seconds (0.5-5.0) |
-| `drivetemp_suspend` | bool | `true` | Suspend drivetemp monitoring during disk sleep |
-| `allow_unencrypted` | bool | `false` | Allow unencrypted HTTP connections |
-
-## NixOS-specific patches
+## NixOS-Specific Patches
 
 ### PCI ID database
 
-The daemon's inline `pci_ids` module hardcodes Linux FHS paths (`/usr/share/hwdata/pci.ids`) which don't exist on NixOS. This flake patches the `@hwdata@` placeholder at build time with the Nix store path to `hwdata`, enabling proper PCI device name resolution.
+The daemon's inline `pci_ids` module hardcodes Linux FHS paths for `pci.ids`. This flake patches the `@hwdata@` placeholder at build time with the Nix store path to `hwdata`.
 
 ### Configuration directory
 
-The daemon uses `/etc/coolercontrol` by default for config, plugins, and state. Override via the `CC_CONFIG_DIR` environment variable if needed.
+The systemd unit sets `CC_CONFIG_DIR=/var/lib/coolercontrol` so the daemon works with `ProtectSystem=strict` (can't write to `/etc`). All config, plugins, TLS certs, and sessions are stored there.
 
-## Version tracking
+## Version Tracking
 
-This flake includes GitHub Actions workflows that automatically update to new upstream releases twice per week (Monday/Thursday). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
+GitHub Actions workflows automatically update to new upstream releases twice per week (Monday/Thursday). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
 
-## Repository structure
+## Repository Structure
 
 ```
 coolercontrol-nix/
@@ -423,7 +313,7 @@ coolercontrol-nix/
 ├── coolercontrold.nix         # Rust daemon package
 ├── coolercontrol-ui-data.nix  # Vue web UI build
 ├── coolercontrol-gui.nix      # Qt6 desktop app package
-├── module.nix                 # NixOS module (systemd service + GUI)
+├── module.nix                 # NixOS module (alternative to nixpkgs module)
 ├── hm-module.nix              # Home Manager module (declarative API config)
 ├── export-config.sh           # Export daemon state as Nix attrset
 ├── coolerctl/                 # coolerctl CLI (Python, wraps REST API)
@@ -437,32 +327,10 @@ coolercontrol-nix/
     └── maintenance.yml        # Weekly: flake.lock update, stale branch cleanup
 ```
 
-## CLI Utility
-
-A Python-based CLI `coolerctl` is provided for interacting with the daemon from the command line.
-
-```bash
-# Login to get a token
-coolerctl auth login
-
-# Export current daemon state to Nix (Home Manager)
-coolerctl export-config
-
-# Quick status
-coolerctl status
-coolerctl fans
-coolerctl temps
-```
-
-## Known Issues
-
-- **Plugins**: Plugin directory is `<config-dir>/plugins/` (default `/etc/coolercontrol/plugins/`). Place plugin `manifest.toml` and files there. Override the base config directory via the `CC_CONFIG_DIR` environment variable. The daemon includes `nodejs` and `python3` in its environment to support common plugins.
-- **PCI Device Names**: Resolved via a build-time patch to the daemon's inline `pci_ids` module that substitutes the Nix store `hwdata` path.
-
 ## Credits
 
 - [Guy Boldon (codifryed)](https://gitlab.com/codifryed) — CoolerControl developer
-- [NixOS/nixpkgs coolercontrol package](https://github.com/NixOS/nixpkgs/tree/master/pkgs/applications/system/coolercontrol) — reference packaging by codifryed and OPNA2608
+- [NixOS/nixpkgs coolercontrol package](https://github.com/NixOS/nixpkgs/tree/master/pkgs/applications/system/coolercontrol) — reference packaging
 
 ## License
 

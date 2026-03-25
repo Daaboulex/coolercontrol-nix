@@ -528,22 +528,42 @@ let
     api() {
       local method="$1" path="$2"
       shift 2
-      ${curlCmd} -skf -X "$method" \
+      local response http_code
+      response=$(${curlCmd} -sk -X "$method" \
         -H "Content-Type: application/json" \
         --config "$AUTH_FILE" \
+        -w "\n%{http_code}" \
         "$@" \
-        "''${URL}''${path}"
+        "''${URL}''${path}")
+      http_code=$(echo "$response" | tail -1)
+      local body
+      body=$(echo "$response" | sed '$d')
+      if [[ "$http_code" -ge 400 ]]; then
+        echo "  ERROR: $method $path → HTTP $http_code" >&2
+        echo "  Response: $body" >&2
+        return 1
+      fi
     }
 
     api_raw() {
       local method="$1" path="$2"
       local content_type="$3"
       shift 3
-      ${curlCmd} -skf -X "$method" \
+      local response http_code
+      response=$(${curlCmd} -sk -X "$method" \
         -H "Content-Type: $content_type" \
         --config "$AUTH_FILE" \
+        -w "\n%{http_code}" \
         "$@" \
-        "''${URL}''${path}"
+        "''${URL}''${path}")
+      http_code=$(echo "$response" | tail -1)
+      local body
+      body=$(echo "$response" | sed '$d')
+      if [[ "$http_code" -ge 400 ]]; then
+        echo "  ERROR: $method $path → HTTP $http_code" >&2
+        echo "  Response: $body" >&2
+        return 1
+      fi
     }
 
     # Wait for daemon (up to 30s)
