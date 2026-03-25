@@ -343,6 +343,9 @@ let
     let
       base = {
         inherit (p) uid name p_type;
+        # Required fields with defaults for 4.1.0+
+        function_uid = p.extra.function_uid or "0";
+        member_profile_uids = p.extra.member_profile_uids or [ ];
       }
       // p.extra;
       withFixed = if p.speed_fixed != null then base // { inherit (p) speed_fixed; } else base;
@@ -350,9 +353,10 @@ let
         if p.speed_profile != [ ] then
           withFixed
           // {
-            speed_profile = map (pt: {
-              inherit (pt) temp duty;
-            }) p.speed_profile;
+            speed_profile = map (pt: [
+              pt.temp
+              pt.duty
+            ]) p.speed_profile;
           }
         else
           withFixed;
@@ -370,6 +374,11 @@ let
           duty_minimum
           duty_maximum
           ;
+        # Required fields with defaults for 4.1.0+
+        f_type = f.extra.f_type or "Identity";
+        step_size_min_decreasing = f.extra.step_size_min_decreasing or 0;
+        step_size_max_decreasing = f.extra.step_size_max_decreasing or 0;
+        threshold_hopping = f.extra.threshold_hopping or false;
       }
       // f.extra;
       addOpt =
