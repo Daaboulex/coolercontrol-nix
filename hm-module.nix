@@ -563,17 +563,18 @@ let
     ''}
 
     # ── Profiles & Functions ──
+    # 4.1.0: PUT on collection URL (uid in body), not /profiles/{uid}
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: p: ''
         echo "Applying profile: ${p.name} (${p.uid})"
-        api PUT "/profiles/${p.uid}" -d '${mkProfileJson name p}'
+        api PUT "/profiles" -d '${mkProfileJson name p}'
       '') cfg.profiles
     )}
 
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: f: ''
         echo "Applying function: ${f.name} (${f.uid})"
-        api PUT "/functions/${f.uid}" -d '${mkFunctionJson name f}'
+        api PUT "/functions" -d '${mkFunctionJson name f}'
       '') cfg.functions
     )}
 
@@ -619,7 +620,7 @@ let
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: m: ''
         echo "Applying mode: ${m.name} (${m.uid})"
-        api PUT "/modes/${m.uid}" -d '${mkModeJson name m}'
+        api PUT "/modes" -d '${mkModeJson name m}'
       '') cfg.modes
     )}
 
