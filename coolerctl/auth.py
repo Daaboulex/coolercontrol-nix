@@ -32,7 +32,7 @@ def auth_login(ctx, password: str):
         raise ApiError(f"Login failed (HTTP {resp.status_code}) — check your password")
 
     resp = SESSION.post(f"{base}/tokens", timeout=10,
-                        json={"label": "coolerctl"})
+                        json={"label": "coolerctl", "write_access": True})
     if resp.status_code != 200:
         raise ApiError(f"Failed to create token: {resp.text}")
     token_data = resp.json()
@@ -77,8 +77,13 @@ def auth_verify(ctx):
 @click.pass_context
 def auth_set_password(ctx, current_password: str, new_password: str):
     """Set the daemon admin password."""
+    import base64
+    # 4.1.0 API: new password goes in Basic Auth header, current in JSON body
+    auth_bytes = f"CCAdmin:{new_password}".encode("utf-8")
+    auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
     api("POST", "/set-passwd", ctx.obj["base"],
-        json={"current_password": current_password, "new_password": new_password})
+        json={"current_password": current_password},
+        headers={"Authorization": f"Basic {auth_b64}"})
     click.echo("Password set")
 
 
@@ -149,7 +154,7 @@ def tokens_list(ctx):
 def tokens_create(ctx, label: str, expires: Optional[str]):
     """Create a new access token."""
     from .output import fmt_json
-    payload = {"label": label}
+    payload = {"label": label, "write_access": True}
     if expires:
         payload["expires_at"] = expires
     data = api("POST", "/tokens", ctx.obj["base"], json=payload)

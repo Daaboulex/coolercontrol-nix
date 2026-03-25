@@ -31,9 +31,10 @@ def api(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> dict | li
     """Make an API call to coolercontrold."""
     url = f"{base}{path}"
     token = _load_token()
-    if token:
-        headers = kwargs.pop("headers", {})
+    headers = kwargs.pop("headers", {})
+    if token and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {token}"
+    if headers:
         kwargs["headers"] = headers
     try:
         resp = SESSION.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs)
@@ -88,9 +89,10 @@ def api_raw(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> str:
     """Make an API call returning raw text."""
     url = f"{base}{path}"
     token = _load_token()
-    if token:
-        headers = kwargs.pop("headers", {})
+    headers = kwargs.pop("headers", {})
+    if token and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {token}"
+    if headers:
         kwargs["headers"] = headers
     try:
         resp = SESSION.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs)
