@@ -1,5 +1,7 @@
 # coolercontrol-nix
 
+[![CI](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml)
+
 NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
 
 This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
