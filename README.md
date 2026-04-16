@@ -1,6 +1,11 @@
 # coolercontrol-nix
 
 [![CI](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Daaboulex/coolercontrol-nix)](./LICENSE)
+[![NixOS](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
+[![Last commit](https://img.shields.io/github/last-commit/Daaboulex/coolercontrol-nix)](https://github.com/Daaboulex/coolercontrol-nix/commits)
+[![Stars](https://img.shields.io/github/stars/Daaboulex/coolercontrol-nix?style=flat)](https://github.com/Daaboulex/coolercontrol-nix/stargazers)
+[![Issues](https://img.shields.io/github/issues/Daaboulex/coolercontrol-nix)](https://github.com/Daaboulex/coolercontrol-nix/issues)
 
 NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
 
