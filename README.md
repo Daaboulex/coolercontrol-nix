@@ -11,8 +11,25 @@ NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontr
 
 This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
 
-> **Note**: This is a community packaging effort. CoolerControl is developed by [Guy Boldon](https://gitlab.com/codifryed).
-> nixpkgs ships an older version — this flake tracks the latest upstream release.
+## Upstream
+
+This is a **Nix packaging wrapper** — not the original project. All credit for CoolerControl goes to:
+
+- **Author**: [Guy Boldon (codifryed)](https://gitlab.com/codifryed)
+- **Repository**: [gitlab.com/coolercontrol/coolercontrol](https://gitlab.com/coolercontrol/coolercontrol)
+- **License**: [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE)
+
+> **Note**: This is a community packaging effort. nixpkgs ships an older version — this flake tracks the latest upstream release.
+
+## What Is This?
+
+A Nix flake that builds the full CoolerControl stack from source with full CI infrastructure:
+
+- **Twice-weekly upstream tracking** (Mon + Thu, 12:00 UTC) — new tags land here within 3-4 days
+- **Pre-build verification** — fail-closed pipeline (eval → build → ELF check) before any push to `main`
+- **Two NixOS module paths** — use nixpkgs' `programs.coolercontrol` with this flake's overlay (recommended), or this flake's own `nixosModules.default` if you want bleeding-edge module options
+- **Home Manager module** — declarative profiles, modes, functions, alerts, and settings applied via REST API on login (`coolercontrol-apply.service`)
+- **`coolerctl` CLI** — Python wrapper around the daemon's REST API (auth, status, profiles, export-config)
 
 ## Quick Start
 
@@ -339,7 +356,22 @@ coolercontrol-nix/
 - [Guy Boldon (codifryed)](https://gitlab.com/codifryed) — CoolerControl developer
 - [NixOS/nixpkgs coolercontrol package](https://github.com/NixOS/nixpkgs/tree/master/pkgs/applications/system/coolercontrol) — reference packaging
 
+## Development
+
+```bash
+git clone https://github.com/Daaboulex/coolercontrol-nix
+cd coolercontrol-nix
+nix develop                       # enter dev shell, installs pre-commit hooks
+nix fmt                           # format flake + module + hm-module
+nix flake check --no-build        # eval check
+nix build .#coolercontrol         # build full GUI desktop app
+nix build .#coolercontrold        # build daemon only
+nix build .#coolercontrol-ui-data # build Vue web UI bundle
+./result/bin/coolercontrold --help
+```
+
+CI runs the same chain twice weekly via `.github/workflows/update.yml`; manual updates rarely needed.
+
 ## License
 
-CoolerControl is licensed under [GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html) by Guy Boldon.
-The Nix packaging expressions in this repository are also licensed under GPL-3.0-or-later — see [LICENSE](LICENSE).
+This packaging flake is [GPL-3.0-or-later](./LICENSE) licensed (matches upstream). Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
