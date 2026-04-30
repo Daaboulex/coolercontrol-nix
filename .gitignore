@@ -27,3 +27,7 @@ AGENTS.md
 .superpowers/
 memory/
 self-improvements-pending-*.jsonl
+.codex/
+.session-handoff-*.md
+handoffs/
+deferred-work.jsonl
