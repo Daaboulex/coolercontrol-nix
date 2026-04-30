@@ -23,6 +23,8 @@ rustPlatform.buildRustPackage {
 
   inherit cargoHash;
 
+  env.HWDATA_PKGDATADIR = "${hwdata}/share/hwdata";
+
   buildInputs = [
     libdrm
     nodejs
@@ -42,11 +44,6 @@ rustPlatform.buildRustPackage {
 
     substituteInPlace daemon/src/repositories/utils.rs \
       --replace-fail 'Command::new("sh")' 'Command::new("${runtimeShell}")'
-
-    # Patch the inline pci_ids module to use the Nix store hwdata path.
-    # The module has a @hwdata@ placeholder for build-time substitution.
-    substituteInPlace daemon/src/repositories/hwmon/pci_ids.rs \
-      --replace-fail '@hwdata@' '${hwdata}'
   '';
 
   postInstall = ''
