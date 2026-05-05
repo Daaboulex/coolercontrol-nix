@@ -1,0 +1,19 @@
+{
+  "package": "coolercontrol",
+  "upstream": {
+    "type": "gitlab-tag",
+    "host": "gitlab.com",
+    "project": "coolercontrol/coolercontrol"
+  },
+  "packageFile": "flake.nix",
+  "hashes": [
+    "hash",
+    "npmDepsHash",
+    "cargoHash"
+  ],
+  "verify": {
+    "binary": null,
+    "args": null,
+    "check": "elf"
+  }
+}
