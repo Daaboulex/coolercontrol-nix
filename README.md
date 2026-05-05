@@ -1,25 +1,23 @@
 # coolercontrol-nix
 
-[![CI](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/Daaboulex/coolercontrol-nix)](./LICENSE)
-[![NixOS](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
-[![Last commit](https://img.shields.io/github/last-commit/Daaboulex/coolercontrol-nix)](https://github.com/Daaboulex/coolercontrol-nix/commits)
-[![Stars](https://img.shields.io/github/stars/Daaboulex/coolercontrol-nix?style=flat)](https://github.com/Daaboulex/coolercontrol-nix/stargazers)
-[![Issues](https://img.shields.io/github/issues/Daaboulex/coolercontrol-nix)](https://github.com/Daaboulex/coolercontrol-nix/issues)
+<!-- BEGIN generated:badges -->
+[![NixOS unstable](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](./LICENSE)
+<!-- END generated:badges -->
 
 NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
 
 This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
 
+<!-- BEGIN generated:upstream -->
 ## Upstream
 
-This is a **Nix packaging wrapper** — not the original project. All credit for CoolerControl goes to:
-
-- **Author**: [Guy Boldon (codifryed)](https://gitlab.com/codifryed)
-- **Repository**: [gitlab.com/coolercontrol/coolercontrol](https://gitlab.com/coolercontrol/coolercontrol)
-- **License**: [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE)
-
-> **Note**: This is a community packaging effort. nixpkgs ships an older version — this flake tracks the latest upstream release.
+| | |
+|---|---|
+| **Project** | [coolercontrol/coolercontrol](https://gitlab.com/coolercontrol/coolercontrol) |
+| **License** | GPL-3.0-or-later |
+| **Tracked** | GitLab tags |
+<!-- END generated:upstream -->
 
 ## What Is This?
 
@@ -372,6 +370,15 @@ nix build .#coolercontrol-ui-data # build Vue web UI bundle
 
 CI runs the same chain twice weekly via `.github/workflows/update.yml`; manual updates rarely needed.
 
+<!-- BEGIN generated:options -->
+<!-- END generated:options -->
+
 ## License
 
 This packaging flake is [GPL-3.0-or-later](./LICENSE) licensed (matches upstream). Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
+
+<!-- BEGIN generated:footer -->
+---
+
+*Maintained as part of the [Daaboulex](https://github.com/Daaboulex) NixOS ecosystem.*
+<!-- END generated:footer -->
