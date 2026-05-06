@@ -1,6 +1,7 @@
 # coolercontrol-nix
 
 <!-- BEGIN generated:badges -->
+[![CI](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml)
 [![NixOS unstable](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](./LICENSE)
 <!-- END generated:badges -->
@@ -371,6 +372,11 @@ nix build .#coolercontrol-ui-data # build Vue web UI bundle
 CI runs the same chain twice weekly via `.github/workflows/update.yml`; manual updates rarely needed.
 
 <!-- BEGIN generated:options -->
+## Options
+
+NixOS module: `programs.coolercontrol.*` (see [`module.nix`](module.nix))
+
+Home Manager module: `programs.coolercontrol.*` (see [`hm-module.nix`](hm-module.nix))
 <!-- END generated:options -->
 
 ## License
