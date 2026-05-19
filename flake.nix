@@ -35,7 +35,7 @@
             rev = version;
             hash = "sha256-hmxeqsCv0URBSe4sU637h4OYroLHQRcOtkFuyKoES7c=";
           };
-          npmDepsHash = "sha256-f0SsTwriUo2rD97L+Z/bq7UahOSLjYjH8bbXg/Hx5qE=";
+          npmDepsHash = "sha256-fWsksBQCwHHWYE82NG0Vf/f+Hk02YMCUaGMHFGhGx2U=";
           cargoHash = "sha256-f0SsTwriUo2rD97L+Z/bq7UahOSLjYjH8bbXg/Hx5qE=";
         in
         {
