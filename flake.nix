@@ -28,15 +28,15 @@
         system:
         let
           pkgs = pkgsFor system;
-          version = "4.3.0";
+          version = "4.3.1";
           src = pkgs.fetchFromGitLab {
             owner = "coolercontrol";
             repo = "coolercontrol";
             rev = version;
-            hash = "sha256-hmxeqsCv0URBSe4sU637h4OYroLHQRcOtkFuyKoES7c=";
+            hash = "sha256-nFlaiQtc4r3FBmdhErUAucG3SQ1GWQX9ClnZXGVWjbc=";
           };
-          npmDepsHash = "sha256-fWsksBQCwHHWYE82NG0Vf/f+Hk02YMCUaGMHFGhGx2U=";
-          cargoHash = "sha256-f0SsTwriUo2rD97L+Z/bq7UahOSLjYjH8bbXg/Hx5qE=";
+          npmDepsHash = "sha256-zolbx5ROiFzNhPGcOnJjEiY3W2IXI24wLKPj3wRSLXU=";
+          cargoHash = "sha256-DE1m/odw90epyR8U9H1pxyJXariIHLXwk+mVYi8cu5A=";
         in
         {
           coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
