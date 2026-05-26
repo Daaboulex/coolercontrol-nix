@@ -659,10 +659,16 @@ let
     ''}
 
     # ── Custom Sensors ──
+    # Idempotent upsert: the custom-sensor API splits create/update — POST 400s
+    # if the id already exists, PUT 404s if it doesn't. POST to create on a
+    # fresh daemon; on "already exists" fall back to PUT to update in place.
+    # This runs every login, so it must tolerate the sensor already existing.
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: s: ''
-        echo "Creating custom sensor: ${s.id}"
-        api POST "/custom-sensors" -d '${mkCustomSensorJson name s}'
+        echo "Applying custom sensor: ${s.id}"
+        if ! api POST "/custom-sensors" -d '${mkCustomSensorJson name s}' 2>/dev/null; then
+          api PUT "/custom-sensors" -d '${mkCustomSensorJson name s}'
+        fi
       '') cfg.customSensors
     )}
 
