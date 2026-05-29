@@ -3,31 +3,58 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    std = {
+      url = "github:Daaboulex/nix-packaging-standard?ref=v2.2.3";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.git-hooks.follows = "git-hooks";
+    };
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      git-hooks,
-    }:
-    let
-      supportedSystems = [
+    inputs@{ flake-parts, self, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
-      forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
-      pkgsFor = system: import nixpkgs { localSystem.system = system; };
-    in
-    {
-      packages = forEachSystem (
-        system:
+
+      imports = [ inputs.std.flakeModules.base ];
+
+      # The overlay nests every output under `pkgs.coolercontrol.*` so it slots
+      # into nixpkgs' own `programs.coolercontrol` module (which reads that path).
+      flake.overlays.default = _final: prev: {
+        coolercontrol = {
+          inherit (self.packages.${prev.stdenv.hostPlatform.system})
+            coolercontrold
+            coolercontrol-gui
+            coolercontrol-ui-data
+            coolerctl
+            ;
+        };
+      };
+      flake.nixosModules.default = import ./module.nix;
+      flake.homeManagerModules.default = import ./hm-module.nix;
+
+      perSystem =
+        {
+          system,
+          pkgs,
+          self',
+          ...
+        }:
         let
-          pkgs = pkgsFor system;
+          # Upstream version, source, and per-language dependency hashes.
+          # scripts/update.sh bumps these in place on each new GitLab tag
+          # (.github/update.json names them: hash, npmDepsHash, cargoHash).
           version = "4.3.1";
           src = pkgs.fetchFromGitLab {
             owner = "coolercontrol";
@@ -39,64 +66,32 @@
           cargoHash = "sha256-DE1m/odw90epyR8U9H1pxyJXariIHLXwk+mVYi8cu5A=";
         in
         {
-          coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
+          packages.coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
             inherit version src npmDepsHash;
           };
-          coolercontrold = pkgs.callPackage ./coolercontrold.nix {
+          # The daemon embeds the built web UI, so it consumes ui-data directly.
+          packages.coolercontrold = pkgs.callPackage ./coolercontrold.nix {
             inherit version src cargoHash;
-            inherit (self.packages.${system}) coolercontrol-ui-data;
+            inherit (self'.packages) coolercontrol-ui-data;
           };
-          coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix { inherit version src; };
-          coolerctl = pkgs.callPackage ./coolerctl/package.nix { };
-          default = self.packages.${system}.coolercontrold;
-        }
-      );
+          packages.coolercontrol-gui = pkgs.callPackage ./coolercontrol-gui.nix { inherit version src; };
+          packages.coolerctl = pkgs.callPackage ./coolerctl/package.nix { };
+          packages.default = self'.packages.coolercontrold;
 
-      overlays.default = _final: prev: {
-        coolercontrol = {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrold;
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrol-gui;
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolercontrol-ui-data;
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) coolerctl;
-        };
-      };
-
-      nixosModules.default = import ./module.nix;
-
-      homeManagerModules.default = import ./hm-module.nix;
-
-      formatter = forEachSystem (system: (pkgsFor system).nixfmt-rfc-style);
-
-      checks = forEachSystem (system: {
-        pre-commit-check = git-hooks.lib.${system}.run {
-          src = self;
-          hooks = {
-            nixfmt-rfc-style.enable = true;
-            typos.enable = true;
-            rumdl.enable = true;
-            check-readme-sections = {
-              enable = true;
-              name = "check-readme-sections";
-              entry = "bash scripts/check-readme-sections.sh";
-              files = "README\\.md$";
-              language = "system";
-            };
+          checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
+            inherit (inputs) nixpkgs;
+            inherit system;
+            overlays = [ self.overlays.default ];
+            module = ./module.nix;
+            config.programs.coolercontrol.enable = true;
+          };
+          # The HM module only shells out to curl at runtime — no overlay needed.
+          checks.module-eval-hm = inputs.std.lib.homeModuleCheck {
+            inherit (inputs) nixpkgs home-manager;
+            inherit system;
+            module = ./hm-module.nix;
+            config.programs.coolercontrol.enable = true;
           };
         };
-      });
-
-      devShells = forEachSystem (
-        system:
-        let
-          pkgs = pkgsFor system;
-        in
-        {
-          default = pkgs.mkShell {
-            inherit (self.checks.${system}.pre-commit-check) shellHook;
-            buildInputs = self.checks.${system}.pre-commit-check.enabledPackages;
-            packages = [ pkgs.nil ];
-          };
-        }
-      );
     };
 }

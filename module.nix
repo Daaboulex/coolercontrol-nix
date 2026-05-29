@@ -9,6 +9,11 @@ let
   cfg = config.programs.coolercontrol;
 in
 {
+  # nixpkgs ships its own programs/coolercontrol.nix declaring the same option
+  # path. This module is a drop-in replacement (bleeding-edge package + extra
+  # options), so disable the nixpkgs one to avoid a duplicate-declaration clash.
+  disabledModules = [ "programs/coolercontrol.nix" ];
+
   options.programs.coolercontrol = {
     enable = lib.mkEnableOption "CoolerControl cooling device management";
 

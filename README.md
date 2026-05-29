@@ -8,7 +8,7 @@
 
 NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
 
-This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access.
+This flake packages CoolerControl from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access. The tracked upstream version lives in [`flake.nix`](flake.nix).
 
 <!-- BEGIN generated:upstream -->
 ## Upstream
@@ -18,13 +18,14 @@ This flake packages CoolerControl **v4.1.0** from source (Rust daemon + Vue web 
 | **Project** | [coolercontrol/coolercontrol](https://gitlab.com/coolercontrol/coolercontrol) |
 | **License** | GPL-3.0-or-later |
 | **Tracked** | GitLab tags |
+
 <!-- END generated:upstream -->
 
 ## What Is This?
 
 A Nix flake that builds the full CoolerControl stack from source with full CI infrastructure:
 
-- **Twice-weekly upstream tracking** (Mon + Thu, 12:00 UTC) — new tags land here within 3-4 days
+- **Daily upstream tracking** (06:00 UTC) — new GitLab tags land here within a day
 - **Pre-build verification** — fail-closed pipeline (eval → build → ELF check) before any push to `main`
 - **Two NixOS module paths** — use nixpkgs' `programs.coolercontrol` with this flake's overlay (recommended), or this flake's own `nixosModules.default` if you want bleeding-edge module options
 - **Home Manager module** — declarative profiles, modes, functions, alerts, and settings applied via REST API on login (`coolercontrol-apply.service`)
@@ -114,6 +115,7 @@ The Home Manager apply service reads this token automatically. **You must run `c
 The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/var/lib/coolercontrol/` (set via `CC_CONFIG_DIR` in the systemd unit). This path is managed by systemd's `StateDirectory`.
 
 > **Migrating from an older version**: If you previously ran CoolerControl without this flake, your config may be at `/etc/coolercontrol/`. Copy it over:
+>
 > ```bash
 > sudo systemctl stop coolercontrold
 > sudo cp -a /etc/coolercontrol/* /var/lib/coolercontrol/
@@ -131,7 +133,7 @@ The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/v
 
 ## CLI usage
 
-The `coolerctl` CLI wraps the daemon's REST API. It's installed automatically when `myModules.home.coolercontrol.enable = true`.
+The `coolerctl` CLI wraps the daemon's REST API. It ships as `pkgs.coolercontrol.coolerctl` (via the overlay) — add it to `environment.systemPackages` or `home.packages` to use it.
 
 ```bash
 # Authentication
@@ -164,6 +166,7 @@ Declaratively configure CoolerControl profiles, functions, modes, alerts, and se
 3. The daemon persists changes to `/var/lib/coolercontrol/`
 
 **Prerequisites**:
+
 - The daemon must be running (`programs.coolercontrol.enable = true`)
 - A bearer token must exist at `~/.config/coolerctl/token` (run `coolerctl auth login`)
 
@@ -181,6 +184,7 @@ systemctl --user restart coolercontrol-apply
 ```
 
 Common errors:
+
 - **HTTP 401 "Invalid Credentials"**: Run `coolerctl auth login` to refresh the token
 - **HTTP 400 "duty_minimum must be greater than 0"**: `duty_minimum` must be >= 1 in 4.1.0+
 - **HTTP 422 "missing field X"**: A required field was not provided (check the example below)
@@ -189,9 +193,9 @@ Common errors:
 ### Example configuration
 
 ```nix
-# home/hosts/<hostname>/coolercontrol/default.nix
+# home.nix (or any Home Manager module)
 {
-  myModules.home.coolercontrol.settings = {
+  programs.coolercontrol = {
     enable = true;
 
     profiles = {
@@ -326,11 +330,11 @@ The systemd unit sets `CC_CONFIG_DIR=/var/lib/coolercontrol` so the daemon works
 
 ## Version Tracking
 
-GitHub Actions workflows automatically update to new upstream releases twice per week (Monday/Thursday). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
+GitHub Actions workflows automatically update to new upstream releases daily (06:00 UTC). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
 
 ## Repository Structure
 
-```
+```text
 coolercontrol-nix/
 ├── flake.nix                  # Flake definition (packages, overlay, modules)
 ├── coolercontrold.nix         # Rust daemon package
@@ -369,7 +373,7 @@ nix build .#coolercontrol-ui-data # build Vue web UI bundle
 ./result/bin/coolercontrold --help
 ```
 
-CI runs the same chain twice weekly via `.github/workflows/update.yml`; manual updates rarely needed.
+CI runs the same chain daily via `.github/workflows/update.yml`; manual updates rarely needed.
 
 <!-- BEGIN generated:options -->
 ## Options
