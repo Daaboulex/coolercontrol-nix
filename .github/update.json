@@ -15,5 +15,18 @@
     "binary": null,
     "args": null,
     "check": "elf"
-  }
+  },
+  "description": "CoolerControl packaged for NixOS - cooling device monitor/control daemon, Qt6 GUI, web UI, NixOS + Home Manager modules",
+  "topics": [
+    "nix",
+    "nixos",
+    "flake",
+    "nixos-module",
+    "home-manager",
+    "coolercontrol",
+    "cooling",
+    "fan-control",
+    "hardware-monitoring",
+    "rust"
+  ]
 }
