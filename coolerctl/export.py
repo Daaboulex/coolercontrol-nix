@@ -40,6 +40,23 @@ def _comment(text):
     return " ".join(str(text).split())
 
 
+def _unique_key(key, taken):
+    """Suffix an attribute name already used in this set.
+
+    Two identically named devices (a second `drivetemp`, a second GPU) would
+    otherwise emit a duplicate attribute and the whole document would fail to
+    evaluate. Every consumer of these keys reads the entry's own uid/id/name,
+    so the key is a label and renaming it changes nothing that is applied.
+    """
+    candidate = str(key)
+    n = 2
+    while candidate in taken:
+        candidate = f"{key}-{n}"
+        n += 1
+    taken.add(candidate)
+    return candidate
+
+
 def _to_nix(data, indent="", key_field=None):
     """Convert Python data to Nix representation."""
     if data is None:
@@ -54,9 +71,11 @@ def _to_nix(data, indent="", key_field=None):
         if key_field and all(isinstance(x, dict) and key_field in x for x in data):
             if not data:
                 return "{ }"
+            taken = set()
             lines = ["{"]
             for x in data:
-                lines.append(f"{indent}  {_nix_key(x[key_field])} = {_to_nix(x, indent + '  ')};")
+                key = _nix_key(_unique_key(x[key_field], taken))
+                lines.append(f"{indent}  {key} = {_to_nix(x, indent + '  ')};")
             lines.append(f"{indent}}}")
             return "\n".join(lines)
 
@@ -137,9 +156,10 @@ def export_config(ctx):
     # ── Per-Device Settings ──
     click.echo("  # ── Per-Device Settings ──")
     click.echo("  devices = {")
+    device_keys = set()
     for dev in devices:
         uid = dev.get("uid")
-        name = dev.get("name", uid)
+        name = _unique_key(dev.get("name", uid), device_keys)
 
         settings = get(f"/devices/{uid}/settings", "    ")
         if not isinstance(settings, dict):
@@ -212,9 +232,10 @@ def export_config(ctx):
     else:
         plugins_list = [plugins_resp]
     click.echo("  plugins = {")
+    plugin_keys = set()
     for p in plugins_list:
         pid = p.get("id")
-        name = p.get("name", pid)
+        name = _unique_key(p.get("name", pid), plugin_keys)
         try:
             p_config = api_raw("GET", f"/plugins/{pid}/config", base) or ""
         except ApiError as e:

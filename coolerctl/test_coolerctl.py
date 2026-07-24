@@ -253,7 +253,12 @@ EXPORT_DEVICES = [
             "temps": [30, 40, 50],
             "driver": {"name": "kraken", "note": "costs ${x} credits"},
         },
-    }
+    },
+    {
+        "uid": "dev-2",
+        "name": "NZXT Kraken X63",
+        "info": {"channels": {"pump": {"speed_options": {"min_duty": 20}}}},
+    },
 ]
 
 EXPORT_RESPONSES = {
@@ -262,8 +267,10 @@ EXPORT_RESPONSES = {
         "fan speed": {"speed_fixed": 50},
         "1st pump": {"profile_uid": "p-1"},
     },
+    "/devices/dev-2/settings": {"pump": {"speed_fixed": 40}},
     "/profiles": {"profiles": [{"name": "Silent Curve", "uid": "p-1",
-                                "speed_profile": [[30, 25], [60, 80]]}]},
+                                "speed_profile": [[30, 25], [60, 80]]},
+                               {"name": "Silent Curve", "uid": "p-2"}]},
     "/functions": {"functions": [{"name": "Default Function", "uid": "f-1"}]},
     "/modes": {"modes": [{"name": "in", "uid": "m-1"}]},
     "/modes-active": {"current_mode_uid": "m-1"},
@@ -347,6 +354,16 @@ class TestExportConfig:
         result = _run_export()
         assert "literal = '''double'''" in result.stdout
         assert "interp = ''${HOME}" in result.stdout
+
+    def test_duplicate_names_get_distinct_attribute_names(self):
+        """Two identically named devices exist in the wild (a second drivetemp,
+        a second GPU); a duplicate attribute makes the whole document unusable."""
+        result = _run_export()
+        assert '"NZXT Kraken X63" = {' in result.stdout
+        assert '"NZXT Kraken X63-2" = {' in result.stdout
+        assert '"Silent Curve-2" = {' in result.stdout
+        assert '"NZXT Kraken X63-2" = {\n      uid = "dev-2";' in result.stdout
+        assert '"Silent Curve-2" = { name = "Silent Curve";' in result.stdout
 
     def test_unauthorized_section_leaves_the_document_complete(self):
         def unauthorized(method, path, base=None, **kwargs):

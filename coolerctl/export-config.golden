@@ -17,6 +17,17 @@
   #         driver = { name = "kraken"; note = "costs \${x} credits"; };
   #       };
   #     }
+  #     {
+  #       uid = "dev-2";
+  #       name = "NZXT Kraken X63";
+  #       info = {
+  #         channels = {
+  #           pump = {
+  #             speed_options = { min_duty = 20; };
+  #           };
+  #         };
+  #       };
+  #     }
   #   ];
 
   # ── Per-Device Settings ──
@@ -26,6 +37,12 @@
       channels = {
         "fan speed" = { speed_fixed = 50; };
         "1st pump" = { profile_uid = "p-1"; };
+      };
+    };
+    "NZXT Kraken X63-2" = {
+      uid = "dev-2";
+      channels = {
+        pump = { speed_fixed = 40; };
       };
     };
   };
@@ -40,6 +57,7 @@
         { temp = 60; duty = 80; }
       ];
     };
+    "Silent Curve-2" = { name = "Silent Curve"; uid = "p-2"; };
   };
 
   # ── Functions ──
