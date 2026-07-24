@@ -78,6 +78,19 @@
           packages.coolerctl = pkgs.callPackage ./coolerctl/package.nix { };
           packages.default = self'.packages.coolercontrold;
 
+          # `coolerctl export-config` must emit Nix a user can paste back.
+          # Importing its committed fixture makes that a build-time property --
+          # a bad quote fails to parse, an unescaped ${...} fails to evaluate --
+          # and the CLI's own test suite fails if generator and fixture drift.
+          checks.export-config-is-valid-nix =
+            let
+              exported = import ./coolerctl/export-config.golden;
+            in
+            pkgs.runCommand "export-config-is-valid-nix" { } ''
+              test "${builtins.deepSeq exported "ok"}" = ok
+              touch "$out"
+            '';
+
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;

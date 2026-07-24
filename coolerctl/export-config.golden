@@ -1,0 +1,87 @@
+{
+  # ── Devices (Hardware Reference) ──
+  # devices_info = [
+  #     {
+  #       uid = "dev-1";
+  #       name = "NZXT Kraken X63";
+  #       info = {
+  #         channels = {
+  #           "fan speed" = {
+  #             speed_options = { min_duty = 0; max_duty = 100; };
+  #           };
+  #           "1st pump" = {
+  #             speed_options = { min_duty = 20; max_duty = 100; };
+  #           };
+  #         };
+  #         temps = [ 30 40 50 ];
+  #         driver = { name = "kraken"; note = "costs \${x} credits"; };
+  #       };
+  #     }
+  #   ];
+
+  # ── Per-Device Settings ──
+  devices = {
+    "NZXT Kraken X63" = {
+      uid = "dev-1";
+      channels = {
+        "fan speed" = { speed_fixed = 50; };
+        "1st pump" = { profile_uid = "p-1"; };
+      };
+    };
+  };
+
+  # ── Profiles (fan curves) ──
+  profiles = {
+    "Silent Curve" = {
+      name = "Silent Curve";
+      uid = "p-1";
+      speed_profile = [
+        { temp = 30; duty = 25; }
+        { temp = 60; duty = 80; }
+      ];
+    };
+  };
+
+  # ── Functions ──
+  functions = {
+    "Default Function" = { name = "Default Function"; uid = "f-1"; };
+  };
+
+  # ── Modes ──
+  modes = {
+    "in" = { name = "in"; uid = "m-1"; };
+  };
+
+  # ── Active Mode ──
+  activeMode = "m-1";
+
+  # ── Custom Sensors ──
+  customSensors = {
+    "2 sensor" = { id = "2 sensor"; name = "Custom"; };
+  };
+
+  # ── Plugins ──
+  plugins = {
+    "My Plugin" = {
+      id = "plug-1";
+      config = ''
+        key = 'value'
+        literal = '''double'''
+        interp = ''${HOME}
+      '';
+    };
+  };
+
+  # ── Alerts ──
+  alerts = [
+    { name = "Hot"; uid = "a-1"; }
+  ];
+
+  # ── Global Settings ──
+  settings = {
+    apply_on_boot = true;
+    no_init = false;
+    startup_delay = 2;
+  };
+
+}

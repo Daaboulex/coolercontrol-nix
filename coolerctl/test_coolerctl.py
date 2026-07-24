@@ -1,5 +1,6 @@
 """Tests for coolerctl CLI — runs sandboxed with mocked HTTP."""
 
+import copy
 import json
 import os
 import tempfile
@@ -235,3 +236,138 @@ class TestRootOptions:
             ])
         assert result.exit_code == 0
         assert mock_api.call_args[0][2] == "https://myhost:9999"
+
+
+# ── export-config ──
+
+
+EXPORT_DEVICES = [
+    {
+        "uid": "dev-1",
+        "name": "NZXT Kraken X63",
+        "info": {
+            "channels": {
+                "fan speed": {"speed_options": {"min_duty": 0, "max_duty": 100}},
+                "1st pump": {"speed_options": {"min_duty": 20, "max_duty": 100}},
+            },
+            "temps": [30, 40, 50],
+            "driver": {"name": "kraken", "note": "costs ${x} credits"},
+        },
+    }
+]
+
+EXPORT_RESPONSES = {
+    "/devices": {"devices": EXPORT_DEVICES},
+    "/devices/dev-1/settings": {
+        "fan speed": {"speed_fixed": 50},
+        "1st pump": {"profile_uid": "p-1"},
+    },
+    "/profiles": {"profiles": [{"name": "Silent Curve", "uid": "p-1",
+                                "speed_profile": [[30, 25], [60, 80]]}]},
+    "/functions": {"functions": [{"name": "Default Function", "uid": "f-1"}]},
+    "/modes": {"modes": [{"name": "in", "uid": "m-1"}]},
+    "/modes-active": {"current_mode_uid": "m-1"},
+    "/custom-sensors": {"custom_sensors": [{"id": "2 sensor", "name": "Custom"}]},
+    "/plugins": [{"id": "plug-1", "name": "My Plugin"}],
+    "/alerts": {"alerts": [{"name": "Hot", "uid": "a-1"}]},
+    "/settings": {"apply_on_boot": True, "no_init": False, "startup_delay": 2},
+}
+
+EXPORT_PLUGIN_CONFIG = "key = 'value'\nliteral = ''double''\ninterp = ${HOME}\n"
+
+FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "export-config.golden")
+
+
+def _export_api(method, path, base=None, **kwargs):
+    if path.endswith("/asetek690"):
+        raise ApiError("API error 405: Method Not Allowed")
+    if path in EXPORT_RESPONSES:
+        return copy.deepcopy(EXPORT_RESPONSES[path])
+    raise ApiError(f"API error 404: no route {path}")
+
+
+def _export_api_raw(method, path, base=None, **kwargs):
+    return EXPORT_PLUGIN_CONFIG
+
+
+def _run_export(api_impl=_export_api, raw_impl=_export_api_raw):
+    runner = CliRunner()
+    with patch("coolerctl.export.api", side_effect=api_impl), \
+         patch("coolerctl.export.api_raw", side_effect=raw_impl):
+        return runner.invoke(cli, ["export-config"])
+
+
+def _body(output):
+    """The document without the volatile generated-at header."""
+    lines = output.splitlines()
+    return "\n".join(lines[lines.index("{"):]) + "\n"
+
+
+class TestExportConfig:
+    def test_matches_committed_fixture(self):
+        """The fixture is parsed by `nix flake check`; drift from it fails here."""
+        result = _run_export()
+        assert result.exit_code == 0
+        with open(FIXTURE_PATH) as f:
+            assert _body(result.stdout) == f.read()
+
+    def test_attribute_names_with_spaces_are_quoted_not_mangled(self):
+        result = _run_export()
+        assert '"fan speed" = {' in result.stdout
+        assert "\n      fan speed = " not in result.stdout
+        assert "fan-speed" not in result.stdout
+
+    def test_digit_leading_attribute_name_is_quoted(self):
+        result = _run_export()
+        assert '"1st pump" = {' in result.stdout
+        assert '"2 sensor" = {' in result.stdout
+
+    def test_nix_keyword_attribute_name_is_quoted(self):
+        result = _run_export()
+        assert '"in" = {' in result.stdout
+
+    def test_scalar_lists_are_space_separated(self):
+        result = _run_export()
+        assert "[ 30 40 50 ]" in result.stdout
+        assert "[30, 40, 50]" not in result.stdout
+
+    def test_string_interpolation_is_escaped(self):
+        result = _run_export()
+        assert '"costs \\${x} credits"' in result.stdout
+
+    def test_devices_info_block_is_commented_line_by_line(self):
+        result = _run_export()
+        lines = result.stdout.splitlines()
+        start = lines.index("  # devices_info = [")
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "")
+        for line in lines[start:end]:
+            assert line.lstrip().startswith("#"), f"leaked into the attrset: {line!r}"
+
+    def test_plugin_config_escapes_indented_string_delimiters(self):
+        result = _run_export()
+        assert "literal = '''double'''" in result.stdout
+        assert "interp = ''${HOME}" in result.stdout
+
+    def test_unauthorized_section_leaves_the_document_complete(self):
+        def unauthorized(method, path, base=None, **kwargs):
+            if path == "/plugins":
+                raise ApiError("API error 401: Unauthorized\nsession expired")
+            return _export_api(method, path, base, **kwargs)
+
+        result = _run_export(api_impl=unauthorized)
+        assert result.exit_code == 1
+        assert "  # /plugins not exported: API error 401: Unauthorized session expired" in result.stdout
+        assert "  plugins = {" in result.stdout
+        assert "  alerts = " in result.stdout
+        assert "  settings = " in result.stdout
+        assert result.stdout.rstrip().endswith("}")
+        assert "401" in result.stderr
+
+    def test_unreachable_daemon_still_closes_every_block(self):
+        def dead(method, path, base=None, **kwargs):
+            raise ApiError("Cannot connect to coolercontrold. Is the daemon running?")
+
+        result = _run_export(api_impl=dead)
+        assert result.exit_code == 1
+        assert _body(result.stdout).count("{") == _body(result.stdout).count("}")
+        assert result.stdout.rstrip().endswith("}")
