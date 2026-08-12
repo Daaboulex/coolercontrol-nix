@@ -367,7 +367,7 @@ cd coolercontrol-nix
 nix develop                       # enter dev shell, installs pre-commit hooks
 nix fmt                           # format flake + module + hm-module
 nix flake check --no-build        # eval check
-nix build .#coolercontrol         # build full GUI desktop app
+nix build .#coolercontrol-gui     # build full GUI desktop app
 nix build .#coolercontrold        # build daemon only
 nix build .#coolercontrol-ui-data # build Vue web UI bundle
 ./result/bin/coolercontrold --help
