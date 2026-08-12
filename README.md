@@ -388,7 +388,4 @@ Home Manager module: `programs.coolercontrol.*` (see [`hm-module.nix`](hm-module
 This packaging flake is [GPL-3.0-or-later](./LICENSE) licensed (matches upstream). Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
 
 <!-- BEGIN generated:footer -->
----
-
-*Maintained as part of the [Daaboulex](https://github.com/Daaboulex) NixOS ecosystem.*
 <!-- END generated:footer -->
