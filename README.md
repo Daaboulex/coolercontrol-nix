@@ -67,7 +67,7 @@ For declarative profiles, modes, functions, alerts, and settings:
 
 ```nix
 home-manager.sharedModules = [
-  inputs.coolercontrol.homeManagerModules.default
+  inputs.coolercontrol.homeModules.default
 ];
 ```
 
