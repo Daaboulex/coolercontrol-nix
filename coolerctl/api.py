@@ -1,6 +1,5 @@
 """HTTP client for coolercontrold REST API."""
 
-import json
 import os
 
 import click
@@ -27,7 +26,9 @@ def _load_token() -> str | None:
     return os.environ.get("COOLERCONTROL_TOKEN")
 
 
-def api(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> dict | list | None:
+def api(
+    method: str, path: str, base: str = DEFAULT_BASE, **kwargs
+) -> dict | list | None:
     """Make an API call to coolercontrold."""
     url = f"{base}{path}"
     token = _load_token()
@@ -39,7 +40,9 @@ def api(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> dict | li
     try:
         resp = SESSION.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs)
     except requests.ConnectionError:
-        raise ApiError(f"Cannot connect to coolercontrold at {base}. Is the daemon running?")
+        raise ApiError(
+            f"Cannot connect to coolercontrold at {base}. Is the daemon running?"
+        ) from None
     if resp.status_code == 200:
         try:
             return resp.json()
@@ -56,7 +59,9 @@ def api(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> dict | li
         raise ApiError(f"API error {resp.status_code}: {detail}")
 
 
-def api_upload(method: str, path: str, file_path: str, base: str = DEFAULT_BASE) -> dict | None:
+def api_upload(
+    method: str, path: str, file_path: str, base: str = DEFAULT_BASE
+) -> dict | None:
     """Upload a file via multipart form to coolercontrold."""
     url = f"{base}{path}"
     token = _load_token()
@@ -68,9 +73,13 @@ def api_upload(method: str, path: str, file_path: str, base: str = DEFAULT_BASE)
     with open(file_path, "rb") as f:
         files = {"file": (os.path.basename(file_path), f)}
         try:
-            resp = SESSION.request(method, url, files=files, headers=headers, timeout=30)
+            resp = SESSION.request(
+                method, url, files=files, headers=headers, timeout=30
+            )
         except requests.ConnectionError:
-            raise ApiError(f"Cannot connect to coolercontrold at {base}. Is the daemon running?")
+            raise ApiError(
+                f"Cannot connect to coolercontrold at {base}. Is the daemon running?"
+            ) from None
     if resp.status_code in (200, 204):
         try:
             return resp.json()
@@ -97,7 +106,9 @@ def api_raw(method: str, path: str, base: str = DEFAULT_BASE, **kwargs) -> str:
     try:
         resp = SESSION.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs)
     except requests.ConnectionError:
-        raise ApiError(f"Cannot connect to coolercontrold at {base}. Is the daemon running?")
+        raise ApiError(
+            f"Cannot connect to coolercontrold at {base}. Is the daemon running?"
+        ) from None
     if resp.status_code in (200, 204):
         return resp.text
     else:

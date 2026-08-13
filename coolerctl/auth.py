@@ -1,11 +1,10 @@
 """Authentication and token management."""
 
 import os
-from typing import Optional
 
 import click
 
-from .api import api, ApiError, SESSION, TOKEN_PATH
+from .api import SESSION, TOKEN_PATH, ApiError, api
 
 
 @click.group()
@@ -20,19 +19,23 @@ def auth_login(ctx, password: str):
     """Login and save a bearer token for future CLI use."""
     base = ctx.obj["base"]
     import base64
-    auth_bytes = f"CCAdmin:{password}".encode("utf-8")
+
+    auth_bytes = f"CCAdmin:{password}".encode()
     auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
     headers = {"Authorization": f"Basic {auth_b64}"}
 
     resp = SESSION.post(f"{base}/login", headers=headers, timeout=10)
     if resp.status_code != 200:
-        resp = SESSION.post(f"{base}/login", json={"current_password": password}, timeout=10)
+        resp = SESSION.post(
+            f"{base}/login", json={"current_password": password}, timeout=10
+        )
 
     if resp.status_code != 200:
         raise ApiError(f"Login failed (HTTP {resp.status_code}) — check your password")
 
-    resp = SESSION.post(f"{base}/tokens", timeout=10,
-                        json={"label": "coolerctl", "write_access": True})
+    resp = SESSION.post(
+        f"{base}/tokens", timeout=10, json={"label": "coolerctl", "write_access": True}
+    )
     if resp.status_code != 200:
         raise ApiError(f"Failed to create token: {resp.text}")
     token_data = resp.json()
@@ -66,32 +69,51 @@ def auth_verify(ctx):
     except ApiError as e:
         click.echo(f"Session invalid: {e}", err=True)
         import sys
+
         sys.exit(1)
 
 
 @auth.command("set-password")
-@click.option("--current-password", "-c", prompt="Current password", hide_input=True,
-              help="Current admin password")
-@click.option("--new-password", "-p", prompt="New password", hide_input=True,
-              confirmation_prompt=True, help="New admin password")
+@click.option(
+    "--current-password",
+    "-c",
+    prompt="Current password",
+    hide_input=True,
+    help="Current admin password",
+)
+@click.option(
+    "--new-password",
+    "-p",
+    prompt="New password",
+    hide_input=True,
+    confirmation_prompt=True,
+    help="New admin password",
+)
 @click.pass_context
 def auth_set_password(ctx, current_password: str, new_password: str):
     """Set the daemon admin password."""
     import base64
+
     base = ctx.obj["base"]
 
     # Step 1: login with current password to get a session cookie
     auth_current = base64.b64encode(f"CCAdmin:{current_password}".encode()).decode()
-    resp = SESSION.post(f"{base}/login",
-                        headers={"Authorization": f"Basic {auth_current}"}, timeout=10)
+    resp = SESSION.post(
+        f"{base}/login", headers={"Authorization": f"Basic {auth_current}"}, timeout=10
+    )
     if resp.status_code != 200:
-        raise ApiError(f"Login failed (HTTP {resp.status_code}) — check your current password")
+        raise ApiError(
+            f"Login failed (HTTP {resp.status_code}) — check your current password"
+        )
 
     # Step 2: call /set-passwd with session cookie + new password in Basic Auth header
     auth_new = base64.b64encode(f"CCAdmin:{new_password}".encode()).decode()
-    resp = SESSION.post(f"{base}/set-passwd", timeout=10,
-                        headers={"Authorization": f"Basic {auth_new}"},
-                        json={"current_password": current_password})
+    resp = SESSION.post(
+        f"{base}/set-passwd",
+        timeout=10,
+        headers={"Authorization": f"Basic {auth_new}"},
+        json={"current_password": current_password},
+    )
     if resp.status_code != 200:
         detail = ""
         try:
@@ -117,6 +139,7 @@ def auth_set_token(token_value: str):
 def auth_status():
     """Check if a token is configured."""
     from .api import _load_token
+
     token = _load_token()
     if token:
         click.echo(f"Token configured ({len(token)} chars)")
@@ -147,6 +170,7 @@ def tokens():
 def tokens_list(ctx):
     """List all access tokens."""
     from .output import fmt_json
+
     data = api("GET", "/tokens", ctx.obj["base"])
     if ctx.obj["json"]:
         fmt_json(data)
@@ -166,9 +190,10 @@ def tokens_list(ctx):
 @click.option("--label", "-l", default="coolerctl", help="Token label/name")
 @click.option("--expires", help="Expiration timestamp (ISO 8601)")
 @click.pass_context
-def tokens_create(ctx, label: str, expires: Optional[str]):
+def tokens_create(ctx, label: str, expires: str | None):
     """Create a new access token."""
     from .output import fmt_json
+
     payload = {"label": label, "write_access": True}
     if expires:
         payload["expires_at"] = expires

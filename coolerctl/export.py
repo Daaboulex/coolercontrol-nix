@@ -4,8 +4,7 @@ import re
 
 import click
 
-from .api import api, api_raw, ApiError
-
+from .api import ApiError, api, api_raw
 
 _UNAVAILABLE = object()
 _NIX_KEYWORDS = frozenset(
@@ -81,7 +80,9 @@ def _to_nix(data, indent="", key_field=None):
 
         if not data:
             return "[ ]"
-        if len(data) <= 3 and all(isinstance(x, (int, float, str, bool)) or x is None for x in data):
+        if len(data) <= 3 and all(
+            isinstance(x, (int, float, str, bool)) or x is None for x in data
+        ):
             return "[ " + " ".join(_to_nix(x) for x in data) + " ]"
 
         lines = ["[\n"]
@@ -96,7 +97,11 @@ def _to_nix(data, indent="", key_field=None):
         if len(data) <= 2 and all(
             isinstance(v, (int, float, str, bool)) or v is None for v in data.values()
         ):
-            return "{ " + " ".join(f"{_nix_key(k)} = {_to_nix(v)};" for k, v in data.items()) + " }"
+            return (
+                "{ "
+                + " ".join(f"{_nix_key(k)} = {_to_nix(v)};" for k, v in data.items())
+                + " }"
+            )
 
         lines = ["{\n"]
         for k, v in data.items():
@@ -189,7 +194,10 @@ def export_config(ctx):
     # ── Profiles ──
     click.echo("  # ── Profiles (fan curves) ──")
     profiles = [
-        dict(p, speed_profile=[{"temp": pt[0], "duty": pt[1]} for pt in p["speed_profile"]])
+        dict(
+            p,
+            speed_profile=[{"temp": pt[0], "duty": pt[1]} for pt in p["speed_profile"]],
+        )
         if p.get("speed_profile")
         else p
         for p in get_list("/profiles", "profiles")

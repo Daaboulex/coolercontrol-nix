@@ -1,12 +1,11 @@
 """Mode management (profile combinations)."""
 
 import json
-from typing import Optional
 
 import click
 
-from .api import api, ApiError
-from .output import fmt_json, _c, BOLD
+from .api import ApiError, api
+from .output import BOLD, _c, fmt_json
 
 
 @click.group()
@@ -80,10 +79,14 @@ def modes_create(ctx, name: str):
 @modes.command("update")
 @click.argument("mode_uid")
 @click.option("--name", help="New name")
-@click.option("--from-json", "json_file", type=click.Path(exists=True),
-              help="Update from a JSON file")
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.Path(exists=True),
+    help="Update from a JSON file",
+)
 @click.pass_context
-def modes_update(ctx, mode_uid: str, name: Optional[str], json_file: Optional[str]):
+def modes_update(ctx, mode_uid: str, name: str | None, json_file: str | None):
     """Update an existing mode."""
     if json_file:
         with open(json_file) as f:

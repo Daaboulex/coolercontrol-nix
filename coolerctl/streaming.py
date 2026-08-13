@@ -5,7 +5,7 @@ import json
 import click
 import requests
 
-from .api import ApiError, SESSION, _load_token
+from .api import SESSION, ApiError, _load_token
 
 
 def _stream_sse(base: str, path: str, label: str, parse_json: bool = True):
@@ -36,7 +36,9 @@ def _stream_sse(base: str, path: str, label: str, parse_json: bool = True):
     except KeyboardInterrupt:
         click.echo("\nStopped.", err=True)
     except requests.ConnectionError:
-        raise ApiError(f"Cannot connect to coolercontrold at {base}. Is the daemon running?")
+        raise ApiError(
+            f"Cannot connect to coolercontrold at {base}. Is the daemon running?"
+        ) from None
 
 
 @click.command("watch-status")
@@ -74,6 +76,7 @@ def show_logs(ctx, lines: int):
     """Show daemon logs."""
     from .api import api
     from .output import fmt_json
+
     data = api("GET", "/logs", ctx.obj["base"])
     if ctx.obj["json"]:
         fmt_json(data)

@@ -3,8 +3,8 @@
 import click
 import requests
 
-from .api import api, api_raw, ApiError, SESSION, _load_token
-from .output import fmt_json, _c, BOLD
+from .api import SESSION, ApiError, _load_token, api, api_raw
+from .output import BOLD, _c, fmt_json
 
 
 @click.group()
@@ -61,7 +61,7 @@ def plugins_update_config(ctx, plugin_id: str, config_file: str):
     try:
         resp = SESSION.put(url, data=config_text, headers=headers, timeout=10)
     except requests.ConnectionError:
-        raise ApiError("Cannot connect to coolercontrold")
+        raise ApiError("Cannot connect to coolercontrold") from None
     if resp.status_code not in (200, 204):
         raise ApiError(f"API error {resp.status_code}: {resp.text}")
     click.echo(f"Plugin {plugin_id} config updated")

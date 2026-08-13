@@ -4,8 +4,8 @@ import json
 
 import click
 
-from .api import api, ApiError
-from .output import fmt_json, _c, BOLD
+from .api import api
+from .output import BOLD, _c, fmt_json
 
 
 @click.group("custom-sensors")
@@ -21,7 +21,13 @@ def custom_sensors_list(ctx):
     if ctx.obj["json"]:
         fmt_json(data)
         return
-    items = data if isinstance(data, list) else data.get("custom_sensors", []) if data else []
+    items = (
+        data
+        if isinstance(data, list)
+        else data.get("custom_sensors", [])
+        if data
+        else []
+    )
     if not items:
         click.echo("No custom sensors configured")
         return
@@ -40,7 +46,9 @@ def custom_sensors_list(ctx):
             for src in sources[:5]:
                 ts = src.get("temp_source", {})
                 w = src.get("weight", 1.0)
-                click.echo(f"      - {ts.get('temp_name', '?')} @ {ts.get('device_uid', '?')[:16]} (weight: {w})")
+                click.echo(
+                    f"      - {ts.get('temp_name', '?')} @ {ts.get('device_uid', '?')[:16]} (weight: {w})"
+                )
         click.echo()
 
 
@@ -54,9 +62,17 @@ def custom_sensors_show(ctx, sensor_id: str):
 
 
 @custom_sensors.command("create")
-@click.argument("cs_type", type=click.Choice(["Mix", "Max", "Min", "Average", "WeightedAvg", "Delta"]))
-@click.option("--source", "-s", multiple=True, required=True,
-              help="Source as device_uid:channel_name (can repeat)")
+@click.argument(
+    "cs_type",
+    type=click.Choice(["Mix", "Max", "Min", "Average", "WeightedAvg", "Delta"]),
+)
+@click.option(
+    "--source",
+    "-s",
+    multiple=True,
+    required=True,
+    help="Source as device_uid:channel_name (can repeat)",
+)
 @click.pass_context
 def custom_sensors_create(ctx, cs_type: str, source: tuple):
     """Create a custom sensor from multiple source channels."""
@@ -64,10 +80,16 @@ def custom_sensors_create(ctx, cs_type: str, source: tuple):
     for s in source:
         parts = s.split(":")
         if len(parts) != 2:
-            raise click.BadParameter(f"Source must be device_uid:channel_name, got: {s}")
+            raise click.BadParameter(
+                f"Source must be device_uid:channel_name, got: {s}"
+            )
         sources.append({"device_uid": parts[0], "temp_name": parts[1]})
-    api("POST", "/custom-sensors", ctx.obj["base"],
-        json={"cs_type": cs_type, "sources": sources})
+    api(
+        "POST",
+        "/custom-sensors",
+        ctx.obj["base"],
+        json={"cs_type": cs_type, "sources": sources},
+    )
     click.echo(f"Created custom sensor ({cs_type})")
 
 

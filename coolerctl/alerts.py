@@ -1,12 +1,11 @@
 """Temperature/sensor alert management."""
 
 import json
-from typing import Optional
 
 import click
 
-from .api import api, ApiError
-from .output import fmt_json, _c, GREEN, RED
+from .api import ApiError, api
+from .output import GREEN, RED, _c, fmt_json
 
 
 @click.group()
@@ -38,7 +37,9 @@ def alerts_list(ctx):
         click.echo(f"    Range: {min_v} - {max_v}  |  State: {state}")
         src = a.get("channel_source", {})
         if src:
-            click.echo(f"    Source: {src.get('channel_name', '?')} @ {src.get('device_uid', '?')[:16]}")
+            click.echo(
+                f"    Source: {src.get('channel_name', '?')} @ {src.get('device_uid', '?')[:16]}"
+            )
         if shutdown:
             click.echo(f"    {_c(RED, '!! Shutdown on activation')}")
         click.echo()
@@ -51,11 +52,23 @@ def alerts_list(ctx):
 @click.option("--device", required=True, help="Device UID")
 @click.option("--channel", required=True, help="Channel name")
 @click.option("--notify/--no-notify", default=True, help="Desktop notification")
-@click.option("--shutdown/--no-shutdown", "shutdown_on_activation", default=False,
-              help="Shutdown system on activation")
+@click.option(
+    "--shutdown/--no-shutdown",
+    "shutdown_on_activation",
+    default=False,
+    help="Shutdown system on activation",
+)
 @click.pass_context
-def alerts_create(ctx, name: str, min_val: float, max_val: float,
-                   device: str, channel: str, notify: bool, shutdown_on_activation: bool):
+def alerts_create(
+    ctx,
+    name: str,
+    min_val: float,
+    max_val: float,
+    device: str,
+    channel: str,
+    notify: bool,
+    shutdown_on_activation: bool,
+):
     """Create a new alert."""
     payload = {
         "name": name,
@@ -76,11 +89,21 @@ def alerts_create(ctx, name: str, min_val: float, max_val: float,
 @click.option("--name", help="New name")
 @click.option("--min", "min_val", type=float, help="New min threshold")
 @click.option("--max", "max_val", type=float, help="New max threshold")
-@click.option("--from-json", "json_file", type=click.Path(exists=True),
-              help="Update from a JSON file")
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.Path(exists=True),
+    help="Update from a JSON file",
+)
 @click.pass_context
-def alerts_update(ctx, alert_uid: str, name: Optional[str], min_val: Optional[float],
-                   max_val: Optional[float], json_file: Optional[str]):
+def alerts_update(
+    ctx,
+    alert_uid: str,
+    name: str | None,
+    min_val: float | None,
+    max_val: float | None,
+    json_file: str | None,
+):
     """Update an existing alert."""
     if json_file:
         with open(json_file) as f:

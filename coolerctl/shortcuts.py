@@ -3,7 +3,7 @@
 import click
 
 from .api import api
-from .output import fmt_json, _temp_color
+from .output import _temp_color, fmt_json
 
 
 @click.command("fan")
@@ -15,8 +15,12 @@ def quick_fan(ctx, device_uid: str, channel: str, duty: int):
     """Quick: set fan duty cycle (shortcut for devices set-manual)."""
     if duty < 0 or duty > 100:
         raise click.BadParameter("Duty must be 0-100")
-    api("PUT", f"/devices/{device_uid}/settings/{channel}/manual",
-        ctx.obj["base"], json={"speed_fixed": duty})
+    api(
+        "PUT",
+        f"/devices/{device_uid}/settings/{channel}/manual",
+        ctx.obj["base"],
+        json={"speed_fixed": duty},
+    )
     click.echo(f"{channel} -> {duty}%")
 
 
@@ -50,7 +54,9 @@ def quick_fans(ctx):
 
 
 @click.command("thinkpad-fan-control")
-@click.option("--enable/--disable", required=True, help="Enable or disable ThinkPad fan control")
+@click.option(
+    "--enable/--disable", required=True, help="Enable or disable ThinkPad fan control"
+)
 @click.pass_context
 def thinkpad_fan_control(ctx, enable: bool):
     """Enable or disable ThinkPad fan control.
@@ -63,7 +69,11 @@ def thinkpad_fan_control(ctx, enable: bool):
 
 
 @click.command("detect")
-@click.option("--load-modules", is_flag=True, help="Also load kernel modules for detected hardware")
+@click.option(
+    "--load-modules",
+    is_flag=True,
+    help="Also load kernel modules for detected hardware",
+)
 @click.pass_context
 def detect(ctx, load_modules: bool):
     """Detect hardware (optionally load kernel modules)."""

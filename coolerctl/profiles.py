@@ -1,12 +1,11 @@
 """Fan curve profile management."""
 
 import json
-from typing import Optional
 
 import click
 
-from .api import api, ApiError
-from .output import fmt_json, _c, BOLD
+from .api import ApiError, api
+from .output import BOLD, _c, fmt_json
 
 
 @click.group()
@@ -43,7 +42,9 @@ def profiles_list(ctx):
         click.echo(f"    Type: {type_str}")
         ts = p.get("temp_source")
         if ts:
-            click.echo(f"    Temp: {ts.get('temp_name', '?')} @ {ts.get('device_uid', '?')[:16]}")
+            click.echo(
+                f"    Temp: {ts.get('temp_name', '?')} @ {ts.get('device_uid', '?')[:16]}"
+            )
         func = p.get("function_uid", "")
         if func:
             click.echo(f"    Func: {func}")
@@ -52,17 +53,31 @@ def profiles_list(ctx):
 
 @profiles.command("create")
 @click.argument("name")
-@click.option("--type", "-t", "p_type", default="Graph",
-              help="Profile type: Graph, Fixed, Mix, Default")
+@click.option(
+    "--type",
+    "-t",
+    "p_type",
+    default="Graph",
+    help="Profile type: Graph, Fixed, Mix, Default",
+)
 @click.option("--speed-fixed", type=int, help="Fixed speed percentage")
-@click.option("--speed-profile", "speed_profile_str",
-              help="Fan curve as temp:duty pairs (e.g. '30:25,50:40,70:70,85:100')")
+@click.option(
+    "--speed-profile",
+    "speed_profile_str",
+    help="Fan curve as temp:duty pairs (e.g. '30:25,50:40,70:70,85:100')",
+)
 @click.option("--temp-source", help="Temperature source as device_uid:channel")
 @click.option("--function", "function_uid", help="Function UID for this profile")
 @click.pass_context
-def profiles_create(ctx, name: str, p_type: str, speed_fixed: Optional[int],
-                     speed_profile_str: Optional[str], temp_source: Optional[str],
-                     function_uid: Optional[str]):
+def profiles_create(
+    ctx,
+    name: str,
+    p_type: str,
+    speed_fixed: int | None,
+    speed_profile_str: str | None,
+    temp_source: str | None,
+    function_uid: str | None,
+):
     """Create a new profile."""
     payload = {"name": name, "p_type": p_type}
     if speed_fixed is not None:
@@ -80,7 +95,8 @@ def profiles_create(ctx, name: str, p_type: str, speed_fixed: Optional[int],
             payload["speed_profile"] = points
         except ValueError as e:
             raise click.BadParameter(
-                f"Invalid speed-profile format: {e}. Use 'temp:duty,temp:duty,...'")
+                f"Invalid speed-profile format: {e}. Use 'temp:duty,temp:duty,...'"
+            ) from e
     if temp_source:
         parts = temp_source.split(":")
         payload["temp_source"] = {"device_uid": parts[0], "temp_name": parts[1]}
@@ -94,11 +110,20 @@ def profiles_create(ctx, name: str, p_type: str, speed_fixed: Optional[int],
 @click.argument("profile_uid")
 @click.option("--name", help="New name")
 @click.option("--speed-fixed", type=int, help="New fixed speed")
-@click.option("--from-json", "json_file", type=click.Path(exists=True),
-              help="Update from a JSON file (overrides other options)")
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.Path(exists=True),
+    help="Update from a JSON file (overrides other options)",
+)
 @click.pass_context
-def profiles_update(ctx, profile_uid: str, name: Optional[str],
-                     speed_fixed: Optional[int], json_file: Optional[str]):
+def profiles_update(
+    ctx,
+    profile_uid: str,
+    name: str | None,
+    speed_fixed: int | None,
+    json_file: str | None,
+):
     """Update an existing profile."""
     if json_file:
         with open(json_file) as f:
@@ -107,7 +132,11 @@ def profiles_update(ctx, profile_uid: str, name: Optional[str],
         click.echo(f"Updated profile from {json_file}")
         return
     all_profiles = api("GET", "/profiles", ctx.obj["base"])
-    items = all_profiles if isinstance(all_profiles, list) else all_profiles.get("profiles", [])
+    items = (
+        all_profiles
+        if isinstance(all_profiles, list)
+        else all_profiles.get("profiles", [])
+    )
     current = next((p for p in items if p.get("uid") == profile_uid), None)
     if not current:
         raise ApiError(f"Profile {profile_uid} not found")
@@ -137,7 +166,11 @@ def profiles_delete(ctx, profile_uid: str, yes: bool):
 def profiles_order(ctx, uids: tuple):
     """Set profile display order. Pass UIDs in desired order."""
     all_profiles = api("GET", "/profiles", ctx.obj["base"])
-    items = all_profiles if isinstance(all_profiles, list) else all_profiles.get("profiles", [])
+    items = (
+        all_profiles
+        if isinstance(all_profiles, list)
+        else all_profiles.get("profiles", [])
+    )
     ordered = []
     for uid in uids:
         found = next((p for p in items if p.get("uid") == uid), None)

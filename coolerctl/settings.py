@@ -1,7 +1,6 @@
 """Daemon settings management."""
 
 import json
-from typing import Optional
 
 import click
 
@@ -24,19 +23,40 @@ def settings_show(ctx):
 
 @settings.command("update")
 @click.option("--startup-delay", type=int, help="Startup delay in seconds")
-@click.option("--apply-on-boot/--no-apply-on-boot", default=None,
-              help="Re-apply settings on daemon startup")
-@click.option("--poll-rate", type=float, help="Sensor polling interval (0.5-5.0 seconds)")
-@click.option("--handle-dynamic-temps/--no-handle-dynamic-temps", default=None,
-              help="Handle hotplug temperature sources")
-@click.option("--liquidctl-integration/--no-liquidctl-integration", default=None,
-              help="Enable liquidctl for AIO coolers")
-@click.option("--from-json", "json_file", type=click.Path(exists=True),
-              help="Update from a JSON file")
+@click.option(
+    "--apply-on-boot/--no-apply-on-boot",
+    default=None,
+    help="Re-apply settings on daemon startup",
+)
+@click.option(
+    "--poll-rate", type=float, help="Sensor polling interval (0.5-5.0 seconds)"
+)
+@click.option(
+    "--handle-dynamic-temps/--no-handle-dynamic-temps",
+    default=None,
+    help="Handle hotplug temperature sources",
+)
+@click.option(
+    "--liquidctl-integration/--no-liquidctl-integration",
+    default=None,
+    help="Enable liquidctl for AIO coolers",
+)
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.Path(exists=True),
+    help="Update from a JSON file",
+)
 @click.pass_context
-def settings_update(ctx, startup_delay: Optional[int], apply_on_boot: Optional[bool],
-                     poll_rate: Optional[float], handle_dynamic_temps: Optional[bool],
-                     liquidctl_integration: Optional[bool], json_file: Optional[str]):
+def settings_update(
+    ctx,
+    startup_delay: int | None,
+    apply_on_boot: bool | None,
+    poll_rate: float | None,
+    handle_dynamic_temps: bool | None,
+    liquidctl_integration: bool | None,
+    json_file: str | None,
+):
     """Update daemon settings."""
     if json_file:
         with open(json_file) as f:
@@ -64,7 +84,7 @@ def settings_update(ctx, startup_delay: Optional[int], apply_on_boot: Optional[b
 @settings.command("devices")
 @click.option("--uid", "device_uid", help="Show settings for a specific device")
 @click.pass_context
-def settings_devices(ctx, device_uid: Optional[str]):
+def settings_devices(ctx, device_uid: str | None):
     """Show device settings (all or specific)."""
     if device_uid:
         data = api("GET", f"/settings/devices/{device_uid}", ctx.obj["base"])

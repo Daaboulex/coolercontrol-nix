@@ -1,12 +1,11 @@
 """Daemon operations: handshake, health, shutdown, acknowledge, status."""
 
 import sys
-from typing import Optional
 
 import click
 
 from .api import api
-from .output import fmt_json, _c, _temp_color, BOLD, GREEN, RED, YELLOW
+from .output import BOLD, GREEN, RED, YELLOW, _c, _temp_color, fmt_json
 
 
 @click.command()
@@ -14,6 +13,7 @@ from .output import fmt_json, _c, _temp_color, BOLD, GREEN, RED, YELLOW
 def handshake(ctx):
     """Verify daemon connection (no auth required)."""
     from .api import ApiError
+
     try:
         result = api("GET", "/handshake", ctx.obj["base"])
         if result and result.get("shake"):
@@ -72,9 +72,11 @@ def acknowledge(ctx):
 
 @click.command()
 @click.option("--device", "-d", "device_uid", help="Show status for a specific device")
-@click.option("--channel", "-c", help="Show status for a specific channel (requires --device)")
+@click.option(
+    "--channel", "-c", help="Show status for a specific channel (requires --device)"
+)
 @click.pass_context
-def status(ctx, device_uid: Optional[str], channel: Optional[str]):
+def status(ctx, device_uid: str | None, channel: str | None):
     """Show current status of all devices (temps, fans, loads).
 
     Use --device to filter by device, --device + --channel for a single channel.
@@ -106,7 +108,11 @@ def status(ctx, device_uid: Optional[str], channel: Optional[str]):
         click.echo(f"{'=' * 60}")
         status_entries = device.get("status", device.get("status_history", []))
         if isinstance(status_entries, list) and status_entries:
-            entry = status_entries[-1] if isinstance(status_entries[-1], dict) else status_entries
+            entry = (
+                status_entries[-1]
+                if isinstance(status_entries[-1], dict)
+                else status_entries
+            )
             _print_status_entry(entry)
         elif isinstance(status_entries, dict):
             _print_status_entry(status_entries)

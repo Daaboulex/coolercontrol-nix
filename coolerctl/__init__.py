@@ -15,8 +15,13 @@ from .api import DEFAULT_BASE
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="coolerctl")
-@click.option("--base-url", "-u", default=DEFAULT_BASE, envvar="COOLERCONTROL_URL",
-              help="Daemon API base URL")
+@click.option(
+    "--base-url",
+    "-u",
+    default=DEFAULT_BASE,
+    envvar="COOLERCONTROL_URL",
+    help="Daemon API base URL",
+)
 @click.option("--json", "-j", "json_output", is_flag=True, help="Force JSON output")
 @click.pass_context
 def cli(ctx, base_url: str, json_output: bool):
@@ -32,16 +37,16 @@ def cli(ctx, base_url: str, json_output: bool):
 
 # ── Register command groups ──
 
+from .alerts import alerts  # noqa: E402
 from .auth import auth, tokens  # noqa: E402
 from .devices import devices  # noqa: E402
-from .lcd import lcd  # noqa: E402
-from .profiles import profiles  # noqa: E402
 from .functions import functions  # noqa: E402
+from .lcd import lcd  # noqa: E402
 from .modes import modes  # noqa: E402
-from .alerts import alerts  # noqa: E402
+from .plugins import plugins  # noqa: E402
+from .profiles import profiles  # noqa: E402
 from .sensors import custom_sensors  # noqa: E402
 from .settings import settings  # noqa: E402
-from .plugins import plugins  # noqa: E402
 
 cli.add_command(auth)
 cli.add_command(tokens)
@@ -57,10 +62,22 @@ cli.add_command(plugins)
 
 # ── Register top-level commands ──
 
-from .daemon import handshake, health, shutdown, acknowledge, status  # noqa: E402
-from .streaming import watch_status, watch_logs, watch_alerts, watch_modes, show_logs  # noqa: E402
-from .shortcuts import quick_fan, quick_temps, quick_fans, thinkpad_fan_control, detect  # noqa: E402
+from .daemon import acknowledge, handshake, health, shutdown, status  # noqa: E402
 from .export import export_config  # noqa: E402
+from .shortcuts import (  # noqa: E402
+    detect,
+    quick_fan,
+    quick_fans,
+    quick_temps,
+    thinkpad_fan_control,
+)
+from .streaming import (  # noqa: E402
+    show_logs,
+    watch_alerts,
+    watch_logs,
+    watch_modes,
+    watch_status,
+)
 
 cli.add_command(handshake)
 cli.add_command(health)

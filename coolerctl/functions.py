@@ -1,12 +1,11 @@
 """Fan curve function management."""
 
 import json
-from typing import Optional
 
 import click
 
-from .api import api, ApiError
-from .output import fmt_json, _c, BOLD
+from .api import ApiError, api
+from .output import BOLD, _c, fmt_json
 
 
 @click.group()
@@ -22,7 +21,9 @@ def functions_list(ctx):
     if ctx.obj["json"]:
         fmt_json(data)
         return
-    items = data if isinstance(data, list) else data.get("functions", []) if data else []
+    items = (
+        data if isinstance(data, list) else data.get("functions", []) if data else []
+    )
     for f in items:
         uid = f.get("uid", "?")
         name = f.get("name", uid)
@@ -40,15 +41,27 @@ def functions_list(ctx):
 
 @functions.command("create")
 @click.argument("name")
-@click.option("--type", "-t", "f_type", default="Identity",
-              help="Function type: Identity, Standard, ExponentialMovingAvg")
+@click.option(
+    "--type",
+    "-t",
+    "f_type",
+    default="Identity",
+    help="Function type: Identity, Standard, ExponentialMovingAvg",
+)
 @click.option("--duty-min", type=int, default=2, help="Minimum duty step size")
 @click.option("--duty-max", type=int, default=5, help="Maximum duty step size")
 @click.option("--response-delay", type=int, help="Response delay in seconds")
 @click.option("--deviance", type=float, help="Temperature deviance threshold")
 @click.pass_context
-def functions_create(ctx, name: str, f_type: str, duty_min: int, duty_max: int,
-                      response_delay: Optional[int], deviance: Optional[float]):
+def functions_create(
+    ctx,
+    name: str,
+    f_type: str,
+    duty_min: int,
+    duty_max: int,
+    response_delay: int | None,
+    deviance: float | None,
+):
     """Create a new function."""
     payload = {
         "name": name,
@@ -72,12 +85,21 @@ def functions_create(ctx, name: str, f_type: str, duty_min: int, duty_max: int,
 @click.option("--name", help="New name")
 @click.option("--duty-min", type=int, help="New minimum duty step size")
 @click.option("--duty-max", type=int, help="New maximum duty step size")
-@click.option("--from-json", "json_file", type=click.Path(exists=True),
-              help="Update from a JSON file")
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.Path(exists=True),
+    help="Update from a JSON file",
+)
 @click.pass_context
-def functions_update(ctx, function_uid: str, name: Optional[str],
-                      duty_min: Optional[int], duty_max: Optional[int],
-                      json_file: Optional[str]):
+def functions_update(
+    ctx,
+    function_uid: str,
+    name: str | None,
+    duty_min: int | None,
+    duty_max: int | None,
+    json_file: str | None,
+):
     """Update an existing function."""
     if json_file:
         with open(json_file) as f:

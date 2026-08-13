@@ -3,15 +3,12 @@
 import copy
 import json
 import os
-import tempfile
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from coolerctl import cli
-from coolerctl.api import _load_token, ApiError
-
+from coolerctl.api import ApiError, _load_token
 
 # ── _load_token ──
 
@@ -24,14 +21,18 @@ class TestLoadToken:
             assert _load_token() == "my-secret-token"
 
     def test_returns_none_when_no_file(self, tmp_path):
-        with patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")):
-            with patch.dict(os.environ, {}, clear=True):
-                assert _load_token() is None
+        with (
+            patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            assert _load_token() is None
 
     def test_reads_from_env_when_no_file(self, tmp_path):
-        with patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")):
-            with patch.dict(os.environ, {"COOLERCONTROL_TOKEN": "env-token"}):
-                assert _load_token() == "env-token"
+        with (
+            patch("coolerctl.api.TOKEN_PATH", str(tmp_path / "nonexistent")),
+            patch.dict(os.environ, {"COOLERCONTROL_TOKEN": "env-token"}),
+        ):
+            assert _load_token() == "env-token"
 
     def test_file_handle_is_closed(self, tmp_path):
         """Verify the file handle leak fix — fd should be closed after read."""
@@ -67,49 +68,79 @@ class TestSpeedProfile:
         runner = CliRunner()
         with patch("coolerctl.profiles.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "profiles", "create", "Gaming",
-                "--type", "Graph",
-                "--speed-profile", "30:25,50:40,70:70,85:100",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "profiles",
+                    "create",
+                    "Gaming",
+                    "--type",
+                    "Graph",
+                    "--speed-profile",
+                    "30:25,50:40,70:70,85:100",
+                ],
+            )
         assert result.exit_code == 0
         call_kwargs = mock_api.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert payload["speed_profile"] == [
-            [30.0, 25], [50.0, 40], [70.0, 70], [85.0, 100]
+            [30.0, 25],
+            [50.0, 40],
+            [70.0, 70],
+            [85.0, 100],
         ]
         assert payload["name"] == "Gaming"
         assert payload["p_type"] == "Graph"
 
     def test_speed_profile_rejects_duty_over_100(self):
         runner = CliRunner()
-        with patch("coolerctl.profiles.api") as mock_api:
-            result = runner.invoke(cli, [
-                "profiles", "create", "Bad",
-                "--speed-profile", "30:150",
-            ])
+        with patch("coolerctl.profiles.api"):
+            result = runner.invoke(
+                cli,
+                [
+                    "profiles",
+                    "create",
+                    "Bad",
+                    "--speed-profile",
+                    "30:150",
+                ],
+            )
         assert result.exit_code != 0
         assert "duty must be 0-100" in result.output
 
     def test_speed_profile_rejects_malformed_input(self):
         runner = CliRunner()
         with patch("coolerctl.profiles.api"):
-            result = runner.invoke(cli, [
-                "profiles", "create", "Bad",
-                "--speed-profile", "not-valid",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "profiles",
+                    "create",
+                    "Bad",
+                    "--speed-profile",
+                    "not-valid",
+                ],
+            )
         assert result.exit_code != 0
 
     def test_speed_profile_with_float_temps(self):
         runner = CliRunner()
         with patch("coolerctl.profiles.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "profiles", "create", "Precise",
-                "--speed-profile", "30.5:25,65.3:80",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "profiles",
+                    "create",
+                    "Precise",
+                    "--speed-profile",
+                    "30.5:25,65.3:80",
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload["speed_profile"] == [[30.5, 25], [65.3, 80]]
 
 
@@ -121,47 +152,76 @@ class TestSettingsFlags:
         runner = CliRunner()
         with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "settings", "update", "--apply-on-boot",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "settings",
+                    "update",
+                    "--apply-on-boot",
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload == {"apply_on_boot": True}
 
     def test_no_apply_on_boot(self):
         runner = CliRunner()
         with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "settings", "update", "--no-apply-on-boot",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "settings",
+                    "update",
+                    "--no-apply-on-boot",
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload == {"apply_on_boot": False}
 
     def test_poll_rate(self):
         runner = CliRunner()
         with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "settings", "update", "--poll-rate", "2.5",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "settings",
+                    "update",
+                    "--poll-rate",
+                    "2.5",
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload == {"poll_rate": 2.5}
 
     def test_multiple_flags_combined(self):
         runner = CliRunner()
         with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "settings", "update",
-                "--startup-delay", "5",
-                "--apply-on-boot",
-                "--liquidctl-integration",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "settings",
+                    "update",
+                    "--startup-delay",
+                    "5",
+                    "--apply-on-boot",
+                    "--liquidctl-integration",
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload == {
             "startup_delay": 5,
             "apply_on_boot": True,
@@ -181,11 +241,19 @@ class TestSettingsFlags:
         runner = CliRunner()
         with patch("coolerctl.settings.api") as mock_api:
             mock_api.return_value = None
-            result = runner.invoke(cli, [
-                "settings", "update", "--from-json", str(json_file),
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "settings",
+                    "update",
+                    "--from-json",
+                    str(json_file),
+                ],
+            )
         assert result.exit_code == 0
-        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get("json")
+        payload = mock_api.call_args.kwargs.get("json") or mock_api.call_args[1].get(
+            "json"
+        )
         assert payload == {"poll_rate": 1.0, "compress": True}
 
 
@@ -197,6 +265,7 @@ class TestApiErrorHandling:
         runner = CliRunner()
         with patch("coolerctl.api.SESSION") as mock_session:
             import requests
+
             mock_session.request.side_effect = requests.ConnectionError()
             result = runner.invoke(cli, ["handshake"])
         assert result.exit_code != 0
@@ -231,9 +300,14 @@ class TestRootOptions:
         runner = CliRunner()
         with patch("coolerctl.daemon.api") as mock_api:
             mock_api.return_value = {"shake": True}
-            result = runner.invoke(cli, [
-                "--base-url", "https://myhost:9999", "handshake",
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "--base-url",
+                    "https://myhost:9999",
+                    "handshake",
+                ],
+            )
         assert result.exit_code == 0
         assert mock_api.call_args[0][2] == "https://myhost:9999"
 
@@ -268,9 +342,16 @@ EXPORT_RESPONSES = {
         "1st pump": {"profile_uid": "p-1"},
     },
     "/devices/dev-2/settings": {"pump": {"speed_fixed": 40}},
-    "/profiles": {"profiles": [{"name": "Silent Curve", "uid": "p-1",
-                                "speed_profile": [[30, 25], [60, 80]]},
-                               {"name": "Silent Curve", "uid": "p-2"}]},
+    "/profiles": {
+        "profiles": [
+            {
+                "name": "Silent Curve",
+                "uid": "p-1",
+                "speed_profile": [[30, 25], [60, 80]],
+            },
+            {"name": "Silent Curve", "uid": "p-2"},
+        ]
+    },
     "/functions": {"functions": [{"name": "Default Function", "uid": "f-1"}]},
     "/modes": {"modes": [{"name": "in", "uid": "m-1"}]},
     "/modes-active": {"current_mode_uid": "m-1"},
@@ -299,15 +380,17 @@ def _export_api_raw(method, path, base=None, **kwargs):
 
 def _run_export(api_impl=_export_api, raw_impl=_export_api_raw):
     runner = CliRunner()
-    with patch("coolerctl.export.api", side_effect=api_impl), \
-         patch("coolerctl.export.api_raw", side_effect=raw_impl):
+    with (
+        patch("coolerctl.export.api", side_effect=api_impl),
+        patch("coolerctl.export.api_raw", side_effect=raw_impl),
+    ):
         return runner.invoke(cli, ["export-config"])
 
 
 def _body(output):
     """The document without the volatile generated-at header."""
     lines = output.splitlines()
-    return "\n".join(lines[lines.index("{"):]) + "\n"
+    return "\n".join(lines[lines.index("{") :]) + "\n"
 
 
 class TestExportConfig:
@@ -373,7 +456,10 @@ class TestExportConfig:
 
         result = _run_export(api_impl=unauthorized)
         assert result.exit_code == 1
-        assert "  # /plugins not exported: API error 401: Unauthorized session expired" in result.stdout
+        assert (
+            "  # /plugins not exported: API error 401: Unauthorized session expired"
+            in result.stdout
+        )
         assert "  plugins = {" in result.stdout
         assert "  alerts = " in result.stdout
         assert "  settings = " in result.stdout
