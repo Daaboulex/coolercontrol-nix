@@ -80,6 +80,12 @@ rustPlatform.buildRustPackage {
       "aarch64-linux"
     ];
     mainProgram = "coolercontrold";
-    maintainers = [ "Daaboulex" ];
+    maintainers = [
+      {
+        name = "Daaboulex";
+        github = "Daaboulex";
+        githubId = 39669593;
+      }
+    ];
   };
 }

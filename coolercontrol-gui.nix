@@ -42,6 +42,12 @@ stdenv.mkDerivation {
       "aarch64-linux"
     ];
     mainProgram = "coolercontrol";
-    maintainers = [ "Daaboulex" ];
+    maintainers = [
+      {
+        name = "Daaboulex";
+        github = "Daaboulex";
+        githubId = 39669593;
+      }
+    ];
   };
 }

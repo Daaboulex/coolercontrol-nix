@@ -28,6 +28,12 @@ buildNpmPackage {
       "x86_64-linux"
       "aarch64-linux"
     ];
-    maintainers = [ "Daaboulex" ];
+    maintainers = [
+      {
+        name = "Daaboulex";
+        github = "Daaboulex";
+        githubId = 39669593;
+      }
+    ];
   };
 }
