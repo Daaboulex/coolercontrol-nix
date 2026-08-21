@@ -55,6 +55,12 @@ rustPlatform.buildRustPackage {
     # so the daemon works with ProtectSystem=strict (can't write to /etc)
     sed -i '/\[Service\]/a Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"' \
       "$out/lib/systemd/system/coolercontrold.service"
+    grep -qF 'Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"' \
+      "$out/lib/systemd/system/coolercontrold.service" || {
+      echo "[FAIL] coolercontrold.service: no [Service] section to append CC_CONFIG_DIR after."
+      echo "Without it the daemon cannot write its config under ProtectSystem=strict."
+      exit 1
+    }
   '';
 
   postFixup = ''
