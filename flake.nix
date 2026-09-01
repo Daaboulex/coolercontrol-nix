@@ -21,6 +21,22 @@
 
   outputs =
     inputs@{ flake-parts, self, ... }:
+    let
+      # Upstream version, source, and per-language dependency hashes.
+      # scripts/update.sh bumps these in place on each new GitLab tag
+      # (.github/update.json names them: hash, npmDepsHash, cargoHash).
+      version = "4.3.1";
+      mkSrc =
+        p:
+        p.fetchFromGitLab {
+          owner = "coolercontrol";
+          repo = "coolercontrol";
+          rev = version;
+          hash = "sha256-nFlaiQtc4r3FBmdhErUAucG3SQ1GWQX9ClnZXGVWjbc=";
+        };
+      npmDepsHash = "sha256-zolbx5ROiFzNhPGcOnJjEiY3W2IXI24wLKPj3wRSLXU=";
+      cargoHash = "sha256-DE1m/odw90epyR8U9H1pxyJXariIHLXwk+mVYi8cu5A=";
+    in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -31,15 +47,27 @@
 
       # The overlay nests every output under `pkgs.coolercontrol.*` so it slots
       # into nixpkgs' own `programs.coolercontrol` module (which reads that path).
-      flake.overlays.default = _final: prev: {
-        coolercontrol = {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system})
-            coolercontrold
-            coolercontrol-gui
-            coolercontrol-ui-data
-            coolerctl
-            ;
-        };
+      flake.overlays.default = final: _prev: {
+        coolercontrol =
+          let
+            src = mkSrc final;
+            coolercontrol-ui-data = final.callPackage ./coolercontrol-ui-data.nix {
+              inherit version src npmDepsHash;
+            };
+          in
+          {
+            inherit coolercontrol-ui-data;
+            coolercontrold = final.callPackage ./coolercontrold.nix {
+              inherit
+                version
+                src
+                cargoHash
+                coolercontrol-ui-data
+                ;
+            };
+            coolercontrol-gui = final.callPackage ./coolercontrol-gui.nix { inherit version src; };
+            coolerctl = final.callPackage ./coolerctl/package.nix { };
+          };
       };
       flake.nixosModules.default = import ./module.nix;
       flake.homeModules.default = import ./hm-module.nix;
@@ -52,18 +80,7 @@
           ...
         }:
         let
-          # Upstream version, source, and per-language dependency hashes.
-          # scripts/update.sh bumps these in place on each new GitLab tag
-          # (.github/update.json names them: hash, npmDepsHash, cargoHash).
-          version = "4.3.1";
-          src = pkgs.fetchFromGitLab {
-            owner = "coolercontrol";
-            repo = "coolercontrol";
-            rev = version;
-            hash = "sha256-nFlaiQtc4r3FBmdhErUAucG3SQ1GWQX9ClnZXGVWjbc=";
-          };
-          npmDepsHash = "sha256-zolbx5ROiFzNhPGcOnJjEiY3W2IXI24wLKPj3wRSLXU=";
-          cargoHash = "sha256-DE1m/odw90epyR8U9H1pxyJXariIHLXwk+mVYi8cu5A=";
+          src = mkSrc pkgs;
         in
         {
           packages.coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
