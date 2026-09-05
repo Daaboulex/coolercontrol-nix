@@ -45,6 +45,12 @@ in
         description = "The coolerctl CLI package to use.";
       };
     };
+
+    configFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "A config.toml copied into the daemon's configuration directory once, on a machine where the daemon has not written its own yet. The daemon owns the file from then on; a change here reaches only a machine that has none.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -52,6 +58,10 @@ in
 
     systemd = {
       packages = [ cfg.package ];
+      tmpfiles.rules = lib.mkIf (cfg.configFile != null) [
+        "d /var/lib/coolercontrol - - - -"
+        "C /var/lib/coolercontrol/config.toml 0644 root root - ${cfg.configFile}"
+      ];
       services.coolercontrold = {
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {

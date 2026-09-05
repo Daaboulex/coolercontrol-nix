@@ -61,6 +61,14 @@ programs.coolercontrol.enable = true;
 
 > **Alternative**: If you prefer to use this flake's NixOS module instead of nixpkgs', import `inputs.coolercontrol.nixosModules.default` and skip step 2.
 
+With this flake's NixOS module, a configuration file can be seeded once:
+
+```nix
+programs.coolercontrol.configFile = ./config.toml;
+```
+
+It is copied into `/var/lib/coolercontrol/` on a machine where the daemon has not written its own `config.toml` yet. The daemon owns the file from then on; a change here reaches only a machine that has none.
+
 ### 4. (Optional) Add the Home Manager module
 
 For declarative profiles, modes, functions, alerts, and settings:
