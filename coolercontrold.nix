@@ -23,6 +23,8 @@ rustPlatform.buildRustPackage {
 
   inherit cargoHash;
 
+  patches = [ ./patches/i2c-client-identity.patch ];
+
   env.HWDATA_PKGDATADIR = "${hwdata}/share/hwdata";
 
   buildInputs = [

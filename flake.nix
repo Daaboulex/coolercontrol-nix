@@ -25,17 +25,17 @@
       # Upstream version, source, and per-language dependency hashes.
       # scripts/update.sh bumps these in place on each new GitLab tag
       # (.github/update.json names them: hash, npmDepsHash, cargoHash).
-      version = "4.3.1";
+      version = "5.0.0";
       mkSrc =
         p:
         p.fetchFromGitLab {
           owner = "coolercontrol";
           repo = "coolercontrol";
           rev = version;
-          hash = "sha256-nFlaiQtc4r3FBmdhErUAucG3SQ1GWQX9ClnZXGVWjbc=";
+          hash = "sha256-sB6afsprHNS82eoNtViJgFo/+I2kQwucGY6pV3M/roQ=";
         };
-      npmDepsHash = "sha256-zolbx5ROiFzNhPGcOnJjEiY3W2IXI24wLKPj3wRSLXU=";
-      cargoHash = "sha256-DE1m/odw90epyR8U9H1pxyJXariIHLXwk+mVYi8cu5A=";
+      npmDepsHash = "sha256-uvcIp4TO+kS5v3Utt5KT1s/Z790oXwD0fCnIR0XyMjs=";
+      cargoHash = "sha256-CuGulahrssmABFBoFC/NFc0524ee+sHCwaaMe9CG0XU=";
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
@@ -108,6 +108,25 @@
               touch "$out"
             '';
 
+          # patches/i2c-client-identity.patch is a divergence from upstream, so it
+          # carries its own retirement. Upstream's identity file names i2c nowhere
+          # today; the moment it does, upstream is handling this itself and the
+          # patch is reviewed and dropped. The patch's own application is the other
+          # half: it fails the build outright if the code it edits moves.
+          checks.i2c-patch-still-needed = pkgs.runCommand "i2c-patch-still-needed" { inherit src; } ''
+            file="$src/coolercontrold/daemon/src/repositories/hwmon/devices.rs"
+            if grep -qi i2c "$file"; then
+              echo "Upstream's device identity now names i2c:"
+              grep -in i2c "$file" | head -5
+              echo ""
+              echo "The local divergence may be redundant. Verify that an i2c client's"
+              echo "identity no longer carries the kernel-assigned bus number, then delete"
+              echo "patches/i2c-client-identity.patch, its entry in coolercontrold.nix, and"
+              echo "this check."
+              exit 1
+            fi
+            touch "$out"
+          '';
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;
