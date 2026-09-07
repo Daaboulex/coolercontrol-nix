@@ -121,6 +121,39 @@
           # today; the moment it does, upstream is handling this itself and the
           # patch is reviewed and dropped. The patch's own application is the other
           # half: it fails the build outright if the code it edits moves.
+          # The daemon reaches libdrm through libdrm_amdgpu_sys, which dlopens
+          # libdrm_amdgpu.so.1, so nothing links it and buildInputs alone leaves
+          # it unresolvable: AMD detection degrades and an RDNA3/4 card is never
+          # identified, with only a warning in the log to say so.
+          checks.amdgpu-library-resolves =
+            pkgs.runCommand "amdgpu-library-resolves"
+              {
+                nativeBuildInputs = [ pkgs.patchelf ];
+                daemon = self'.packages.coolercontrold;
+              }
+              ''
+                bin="$daemon/bin/.coolercontrold-wrapped"
+                [ -f "$bin" ] || bin="$daemon/bin/coolercontrold"
+                if [ ! -f "$bin" ]; then
+                  echo "::error::no coolercontrold binary at $daemon/bin to inspect"
+                  exit 1
+                fi
+
+                found=""
+                for dir in $(patchelf --print-rpath "$bin" | tr ':' ' '); do
+                  if [ -e "$dir/libdrm_amdgpu.so.1" ]; then
+                    found="$dir"
+                  fi
+                done
+
+                if [ -z "$found" ]; then
+                  echo "::error::the daemon dlopens libdrm_amdgpu.so.1 and nothing in its RUNPATH provides it, so AMD detection degrades and an RDNA3/4 card is never identified"
+                  exit 1
+                fi
+
+                touch "$out"
+              '';
+
           checks.i2c-patch-still-needed = pkgs.runCommand "i2c-patch-still-needed" { inherit src; } ''
             file="$src/coolercontrold/daemon/src/repositories/hwmon/devices.rs"
             if grep -qi i2c "$file"; then

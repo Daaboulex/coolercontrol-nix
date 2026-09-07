@@ -68,6 +68,12 @@ rustPlatform.buildRustPackage {
   postFixup = ''
     addDriverRunpath "$out/bin/coolercontrold"
 
+    # libdrm_amdgpu_sys dlopens libdrm_amdgpu.so.1, so nothing links it and
+    # buildInputs alone leaves the daemon unable to find it: AMD detection then
+    # degrades and an RDNA3/4 card is never identified. The RUNPATH resolves it
+    # from the binary itself, which also puts libdrm in the runtime closure.
+    patchelf --add-rpath "${lib.makeLibraryPath [ libdrm ]}" "$out/bin/coolercontrold"
+
     buildPythonPath "''${pythonPath[*]}"
     wrapProgram "$out/bin/coolercontrold" \
       --prefix PATH : ${
