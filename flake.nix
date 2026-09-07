@@ -83,6 +83,14 @@
           src = mkSrc pkgs;
         in
         {
+          # A unified diff's context lines are byte-exact; a formatter that trims
+          # them silently breaks the patch, so the fixers leave .patch alone.
+          pre-commit.settings.hooks = {
+            trim-trailing-whitespace.excludes = [ "\\.patch$" ];
+            end-of-file-fixer.excludes = [ "\\.patch$" ];
+            typos.excludes = [ "\\.patch$" ];
+          };
+
           packages.coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
             inherit version src npmDepsHash;
           };
