@@ -23,7 +23,10 @@ rustPlatform.buildRustPackage {
 
   inherit cargoHash;
 
-  patches = [ ./patches/i2c-client-identity.patch ];
+  patches = [
+    ./patches/i2c-client-identity.patch
+    ./patches/macsmc-hwmon-fan-control.patch
+  ];
 
   env.HWDATA_PKGDATADIR = "${hwdata}/share/hwdata";
 

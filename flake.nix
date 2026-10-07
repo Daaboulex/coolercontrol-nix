@@ -168,6 +168,21 @@
             fi
             touch "$out"
           '';
+          checks.macsmc-patch-still-needed = pkgs.runCommand "macsmc-patch-still-needed" { inherit src; } ''
+            file="$src/coolercontrold/daemon/src/repositories/hwmon/devices.rs"
+            if grep -q '"macsmc_hwmon"' "$file"; then
+              echo "Upstream now matches the kernel's macsmc_hwmon device name:"
+              grep -n macsmc "$file" | head -5
+              echo ""
+              echo "The Apple Silicon fan fix may have landed. Verify that detection needs no"
+              echo "fanN_manual, that 0% writes 0 to fanN_target, and that shutdown hands a"
+              echo "macsmc_hwmon fan back to the firmware, then delete"
+              echo "patches/macsmc-hwmon-fan-control.patch, its entry in coolercontrold.nix,"
+              echo "and this check."
+              exit 1
+            fi
+            touch "$out"
+          '';
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;

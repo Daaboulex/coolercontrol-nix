@@ -1,0 +1,400 @@
+fix(hwmon): drive Apple Silicon fans through macsmc_hwmon
+
+The Apple Silicon path written for macsmc-hwmon never runs on the driver
+that landed in Linux 6.19. The kernel registers the hwmon device as
+macsmc_hwmon, with an underscore, so the name check never matches and the
+fans fall through to the generic path as rpm-only, "not controllable:
+NoPwm". Even with the name matched, detection demanded a writable
+fanN_manual, which this driver does not have. The first in-range write to
+fanN_target switches a fan to manual, and writing 0 hands it back to the
+SMC firmware. Any other value is refused with EINVAL.
+
+On macsmc_hwmon alone, the name is the kernel's, detection needs no
+manual file, a duty maps onto the fan's own minimum to maximum, 0% writes
+0 so the firmware owns the fan again (only the firmware can stop it), the
+switch to manual writes nothing, and the reset writes 0.
+
+Shutdown reset every fan through pwm_enable, which a fan without one skips
+as a success, so an Apple Silicon fan kept the last duty the daemon set
+after it stopped. A controllable macsmc_hwmon fan is now reset through the
+Apple path. The Intel applesmc path is left exactly as it was, including
+at shutdown, where it has the same gap. That is a separate change.
+
+Measured on a J316c MacBook Pro (M1 Max), kernel 7.1.13, fan_control=1,
+with fan1 at 1499 to 5348 rpm, fan2 at 1499 to 5776 rpm, the hwmon name
+macsmc_hwmon and no fanN_manual.
+
+diff --git a/daemon/src/repositories/hwmon/apple_mac_smc.rs b/daemon/src/repositories/hwmon/apple_mac_smc.rs
+index cfb1f4c..5897c54 100644
+--- a/daemon/src/repositories/hwmon/apple_mac_smc.rs
++++ b/daemon/src/repositories/hwmon/apple_mac_smc.rs
+@@ -24,6 +24,7 @@ const DEFAULT_MIN_FAN_SPEED: RPM = 600;
+ const DEFAULT_MAX_FAN_SPEED: RPM = 6_500;
+ const FAN_AUTO_CONTROL: u8 = 0;
+ const FAN_MANUAL_CONTROL: u8 = 1;
++const MAC_SMC_FIRMWARE_TARGET: RPM = 0;
+ const PATTERN_FAN_OUTPUT_FILE_NUMBER: &str = r"^fan(?P<number>\d+)_output$";
+ const PATTERN_FAN_TARGET_FILE_NUMBER: &str = r"^fan(?P<number>\d+)_target$";
+ macro_rules! format_fan_manual { ($($arg:tt)*) => {{ format!("fan{}_manual", $($arg)*) }}; }
+@@ -166,7 +167,7 @@ impl AppleMacSMC {
+         {
+             return Ok(()); // skip if fan_input file isn't readable (no indicator of speed)
+         }
+-        if Self::fan_manual_is_writable(base_path, channel_number).not() {
++        if is_output_file && Self::fan_manual_is_writable(base_path, channel_number).not() {
+             return Ok(()); // skip if fan_manual file isn't writable
+         }
+         if Self::get_fan_max(base_path, channel_number, true)
+@@ -181,7 +182,9 @@ impl AppleMacSMC {
+         {
+             return Ok(()); // skip if fan_min file isn't readable
+         }
+-        let _ = Self::fan_min_is_writable(base_path, channel_number); // check for writability
++        if is_output_file {
++            let _ = Self::fan_min_is_writable(base_path, channel_number); // check for writability
++        }
+         let caps = fan_caps
+             .entry(channel_number)
+             .or_insert(HwmonChannelCapabilities::empty());
+@@ -410,6 +413,10 @@ impl AppleMacSMC {
+     }
+ 
+     pub async fn set_to_auto_control(&self, channel_number: u8, io: &DeviceIo) -> Result<()> {
++        if self.is_mac_smc {
++            return Self::set_fan_target(&self.path, channel_number, MAC_SMC_FIRMWARE_TARGET, io)
++                .await;
++        }
+         let fan_min_default = self
+             .fans
+             .get(&channel_number)
+@@ -436,6 +443,9 @@ impl AppleMacSMC {
+     }
+ 
+     pub async fn set_to_manual_control(&self, channel_number: u8, io: &DeviceIo) -> Result<()> {
++        if self.is_mac_smc {
++            return Ok(());
++        }
+         let fan_min_path = self.path.join(format_fan_min!(channel_number));
+         let fan_manual_path = self.path.join(format_fan_manual!(channel_number));
+         if let Err(e) = io.write_value(&fan_min_path, b"0".to_vec()).await {
+@@ -560,6 +570,9 @@ impl AppleMacSMC {
+     /// This is to avoid floating point precision issues and gives us a more accurate result.
+     fn interpolate_duty_from_rpm(&self, channel_number: u8, rpm: RPM) -> Option<f64> {
+         self.fans.get(&channel_number).map(|fan| {
++            if self.is_mac_smc {
++                return Self::mac_smc_duty_from_rpm(fan, rpm);
++            }
+             if rpm == 0 {
+                 return 0.;
+             } else if rpm >= fan.max_rpm {
+@@ -580,12 +593,36 @@ impl AppleMacSMC {
+                 DEFAULT_MAX_FAN_SPEED
+             },
+             |fan| {
++                if self.is_mac_smc {
++                    return Self::mac_smc_rpm_from_duty(fan, duty);
++                }
+                 let max_rpm_points = f64::from(fan.max_rpm) / 1_000.;
+                 let rpm = ((f64::from(duty) * max_rpm_points).round() * 10.).round() as RPM;
+                 rpm.clamp(0, DEFAULT_MAX_FAN_SPEED)
+             },
+         )
+     }
++
++    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
++    fn mac_smc_rpm_from_duty(fan: &AppleFanInfo, duty: Duty) -> RPM {
++        if duty == 0 {
++            return MAC_SMC_FIRMWARE_TARGET;
++        }
++        let span = f64::from(fan.max_rpm.saturating_sub(fan.default_min_rpm));
++        let rpm = f64::from(fan.default_min_rpm) + span * f64::from(duty.min(100)) / 100.;
++        (rpm.round() as RPM).max(fan.default_min_rpm).min(fan.max_rpm)
++    }
++
++    fn mac_smc_duty_from_rpm(fan: &AppleFanInfo, rpm: RPM) -> f64 {
++        if rpm <= fan.default_min_rpm {
++            return 0.;
++        }
++        if rpm >= fan.max_rpm {
++            return 100.;
++        }
++        let span = f64::from(fan.max_rpm - fan.default_min_rpm);
++        (f64::from(rpm - fan.default_min_rpm) * 100. / span).round()
++    }
+ }
+ 
+ #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+@@ -1687,7 +1724,157 @@ mod tests {
+                 .unwrap();
+             teardown(&ctx).await;
+             assert!(result.is_ok());
+-            assert_eq!(fan_target.trim(), "2500");
++            assert_eq!(fan_target.trim(), "2800");
++        });
++    }
++
++    fn mac_smc_fan() -> AppleFanInfo {
++        AppleFanInfo {
++            max_rpm: 5348,
++            default_min_rpm: 1499,
++        }
++    }
++
++    fn mac_smc(path: &Path) -> AppleMacSMC {
++        AppleMacSMC {
++            detected: true,
++            path: path.to_path_buf(),
++            is_mac_smc: true,
++            fans: HashMap::from([(1, mac_smc_fan())]),
++        }
++    }
++
++    #[test]
++    fn test_mac_smc_rpm_from_duty_spans_min_to_max_and_zero_is_firmware() {
++        let fan = mac_smc_fan();
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 0), 0);
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 1), 1537);
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 50), 3424);
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 100), 5348);
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 255), 5348);
++    }
++
++    #[test]
++    fn test_mac_smc_duty_from_rpm_inverts_the_span() {
++        let fan = mac_smc_fan();
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 0), 0.);
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 1499), 0.);
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 3424), 50.);
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 5348), 100.);
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 6000), 100.);
++    }
++
++    #[test]
++    fn test_mac_smc_rpm_from_duty_never_panics_on_inverted_limits() {
++        let fan = AppleFanInfo {
++            max_rpm: 1000,
++            default_min_rpm: 1499,
++        };
++        assert_eq!(AppleMacSMC::mac_smc_rpm_from_duty(&fan, 50), 1000);
++        assert_eq!(AppleMacSMC::mac_smc_duty_from_rpm(&fan, 1200), 0.);
++    }
++
++    #[test]
++    #[serial]
++    fn test_new_recognises_the_kernel_macsmc_hwmon_name() {
++        cc_fs::test_runtime(async {
++            let ctx = setup().await;
++            let apple_smc = AppleMacSMC::new(&ctx.test_base_path, &vec![], "macsmc_hwmon").await;
++            let applesmc = AppleMacSMC::new(&ctx.test_base_path, &vec![], "applesmc").await;
++            teardown(&ctx).await;
++            assert!(apple_smc.is_mac_smc);
++            assert!(applesmc.is_mac_smc.not());
++        });
++    }
++
++    #[test]
++    #[serial]
++    fn test_detect_mac_smc_fan_needs_no_manual_file() {
++        cc_fs::test_runtime(async {
++            let ctx = setup().await;
++            let base = &ctx.test_base_path;
++            for (file, value) in [
++                ("fan1_target", "0"),
++                ("fan1_input", "1520"),
++                ("fan1_min", "1499"),
++                ("fan1_max", "5348"),
++            ] {
++                cc_fs::write(base.join(file), value.as_bytes().to_vec())
++                    .await
++                    .unwrap();
++            }
++            let mut fan_caps = HashMap::new();
++
++            let result =
++                AppleMacSMC::detect_apple_smc_fans(base, "fan1_target", &mut fan_caps).await;
++
++            teardown(&ctx).await;
++            assert!(result.is_ok());
++            let caps = fan_caps.get(&1).unwrap();
++            assert!(caps.is_apple_smc());
++            assert!(caps.is_fan_controllable());
++        });
++    }
++
++    #[test]
++    #[serial]
++    fn test_mac_smc_set_to_auto_control_writes_zero_target_only() {
++        cc_fs::test_runtime(async {
++            let ctx = setup().await;
++            let base = &ctx.test_base_path;
++            cc_fs::write(base.join("fan1_target"), b"3000".to_vec())
++                .await
++                .unwrap();
++
++            let result = mac_smc(base)
++                .set_to_auto_control(1, &DeviceIo::default())
++                .await;
++
++            let fan_target = cc_fs::read_sysfs(base.join("fan1_target")).await.unwrap();
++            let manual_written = base.join("fan1_manual").exists();
++            let min_written = base.join("fan1_min").exists();
++            teardown(&ctx).await;
++            assert!(result.is_ok());
++            assert_eq!(fan_target.trim(), "0");
++            assert!(manual_written.not());
++            assert!(min_written.not());
++        });
++    }
++
++    #[test]
++    #[serial]
++    fn test_mac_smc_set_to_manual_control_writes_nothing() {
++        cc_fs::test_runtime(async {
++            let ctx = setup().await;
++            let base = &ctx.test_base_path;
++
++            let result = mac_smc(base)
++                .set_to_manual_control(1, &DeviceIo::default())
++                .await;
++
++            let written = cc_fs::read_dir(base).unwrap().count();
++            teardown(&ctx).await;
++            assert!(result.is_ok());
++            assert_eq!(written, 0);
++        });
++    }
++
++    #[test]
++    #[serial]
++    fn test_mac_smc_zero_duty_hands_the_fan_to_firmware() {
++        cc_fs::test_runtime(async {
++            let ctx = setup().await;
++            let base = &ctx.test_base_path;
++            cc_fs::write(base.join("fan1_target"), b"3000".to_vec())
++                .await
++                .unwrap();
++
++            let result = mac_smc(base).set_fan_duty(1, 0, &DeviceIo::default()).await;
++
++            let fan_target = cc_fs::read_sysfs(base.join("fan1_target")).await.unwrap();
++            teardown(&ctx).await;
++            assert!(result.is_ok());
++            assert_eq!(fan_target.trim(), "0");
+         });
+     }
+ 
+diff --git a/daemon/src/repositories/hwmon/devices.rs b/daemon/src/repositories/hwmon/devices.rs
+index b6b7cce..32901d8 100644
+--- a/daemon/src/repositories/hwmon/devices.rs
++++ b/daemon/src/repositories/hwmon/devices.rs
+@@ -44,7 +44,7 @@ pub const HWMON_DEVICE_NAME_BLACKLIST: [&str; 1] = [
+ const _: () = assert!(HWMON_DEVICE_NAME_BLACKLIST.len() == 1);
+ const LAPTOP_DEVICE_NAMES: [&str; 3] = ["thinkpad", "asus-nb-wmi", "asus_fan"];
+ pub const DEVICE_NAME_THINK_PAD: &str = "thinkpad";
+-pub const DEVICE_NAME_MAC_SMC: &str = "macsmc-hwmon";
++pub const DEVICE_NAME_MAC_SMC: &str = "macsmc_hwmon";
+ pub const DEVICE_NAMES_APPLE: [&str; 2] = ["applesmc", DEVICE_NAME_MAC_SMC];
+ 
+ struct GlobPaths {
+diff --git a/daemon/src/repositories/hwmon/hwmon_repo.rs b/daemon/src/repositories/hwmon/hwmon_repo.rs
+index 14d1a73..6b6d00f 100644
+--- a/daemon/src/repositories/hwmon/hwmon_repo.rs
++++ b/daemon/src/repositories/hwmon/hwmon_repo.rs
+@@ -855,13 +855,22 @@ impl HwmonRepo {
+                     continue;
+                 }
+             };
+-            if let Err(err) = fans::set_pwm_enable_to_default_or_auto(
+-                &hwmon_driver.path,
+-                channel_info,
+-                &hwmon_driver.io,
+-            )
+-            .await
++            let reset = if hwmon_driver.name == devices::DEVICE_NAME_MAC_SMC
++                && channel_info.caps.is_apple_smc()
+             {
++                hwmon_driver
++                    .apple_smc
++                    .set_to_auto_control(channel_info.number, &hwmon_driver.io)
++                    .await
++            } else {
++                fans::set_pwm_enable_to_default_or_auto(
++                    &hwmon_driver.path,
++                    channel_info,
++                    &hwmon_driver.io,
++                )
++                .await
++            };
++            if let Err(err) = reset {
+                 error!(
+                     "Shutdown reset failed for {}:{}: {err}",
+                     hwmon_driver.name, channel_info.name
+@@ -5921,6 +5930,10 @@ mod shutdown_tests {
+             io,
+             ..Default::default()
+         };
++        insert_driver(repo, type_index, driver);
++    }
++
++    fn insert_driver(repo: &mut HwmonRepo, type_index: TypeIndex, driver: HwmonDriverInfo) {
+         let device = Device::new(
+             driver.name.clone(),
+             DeviceType::Hwmon,
+@@ -5949,6 +5962,57 @@ mod shutdown_tests {
+         )
+     }
+ 
++    #[test]
++    #[serial]
++    fn shutdown_hands_mac_smc_fans_back_to_firmware() {
++        cc_fs::test_runtime(async {
++            let base = PathBuf::from(format!("/tmp/coolercontrol-tests-{}", Uuid::new_v4()));
++            let dir = base.join("macsmc");
++            cc_fs::create_dir_all(&dir).await.unwrap();
++            for (file, value) in [
++                ("fan1_target", "3000"),
++                ("fan1_input", "3000"),
++                ("fan1_min", "1499"),
++                ("fan1_max", "5348"),
++            ] {
++                cc_fs::write(dir.join(file), value.as_bytes().to_vec())
++                    .await
++                    .unwrap();
++            }
++            let channels = vec![HwmonChannelInfo {
++                hwmon_type: HwmonChannelType::Fan,
++                number: 1,
++                name: "fan1".to_string(),
++                caps: HwmonChannelCapabilities::APPLE_SMC
++                    | HwmonChannelCapabilities::FAN_WRITABLE
++                    | HwmonChannelCapabilities::RPM,
++                rpm_path: Some(dir.join("fan1_input")),
++                ..Default::default()
++            }];
++            let apple_smc = AppleMacSMC::new(&dir, &channels, devices::DEVICE_NAME_MAC_SMC).await;
++            let mut repo = empty_repo();
++            insert_driver(
++                &mut repo,
++                1,
++                HwmonDriverInfo {
++                    name: devices::DEVICE_NAME_MAC_SMC.to_string(),
++                    path: dir.clone(),
++                    channels,
++                    u_id: "test-uid-macsmc-1".to_string(),
++                    apple_smc,
++                    ..Default::default()
++                },
++            );
++
++            let result = repo.shutdown().await;
++
++            let after = cc_fs::read_sysfs(&dir.join("fan1_target")).await.unwrap();
++            let _ = cc_fs::remove_dir_all(&base).await;
++            assert!(result.is_ok(), "shutdown should succeed: {result:?}");
++            assert_eq!(after.trim(), "0", "the SMC firmware must own the fan again");
++        });
++    }
++
+     #[test]
+     #[serial]
+     fn shutdown_continues_after_permit_timeout_on_earlier_device() {
