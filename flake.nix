@@ -125,6 +125,28 @@
           # libdrm_amdgpu.so.1, so nothing links it and buildInputs alone leaves
           # it unresolvable: AMD detection degrades and an RDNA3/4 card is never
           # identified, with only a warning in the log to say so.
+          checks.gpu-stress-libraries-resolve =
+            pkgs.runCommand "gpu-stress-libraries-resolve"
+              {
+                nativeBuildInputs = [ pkgs.patchelf ];
+                daemon = self'.packages.coolercontrold;
+              }
+              ''
+                bin="$daemon/bin/.coolercontrold-wrapped"
+                [ -f "$bin" ] || bin="$daemon/bin/coolercontrold"
+                rpath=$(patchelf --print-rpath "$bin")
+                for lib in libvulkan.so.1 libEGL.so.1; do
+                  found=""
+                  for dir in ''${rpath//:/ }; do
+                    [ -e "$dir/$lib" ] && found="$dir"
+                  done
+                  if [ -z "$found" ]; then
+                    echo "::error::the GPU stress test dlopens $lib and nothing in the daemon's RUNPATH provides it, so it finds no GPU when run as a service"
+                    exit 1
+                  fi
+                done
+                touch "$out"
+              '';
           checks.amdgpu-library-resolves =
             pkgs.runCommand "amdgpu-library-resolves"
               {

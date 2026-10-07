@@ -2,6 +2,8 @@
   rustPlatform,
   lib,
   libdrm,
+  libglvnd,
+  vulkan-loader,
   runtimeShell,
   addDriverRunpath,
   python3Packages,
@@ -73,11 +75,19 @@ rustPlatform.buildRustPackage {
   postFixup = ''
     addDriverRunpath "$out/bin/coolercontrold"
 
-    # libdrm_amdgpu_sys dlopens libdrm_amdgpu.so.1, so nothing links it and
-    # buildInputs alone leaves the daemon unable to find it: AMD detection then
-    # degrades and an RDNA3/4 card is never identified. The RUNPATH resolves it
-    # from the binary itself, which also puts libdrm in the runtime closure.
-    patchelf --add-rpath "${lib.makeLibraryPath [ libdrm ]}" "$out/bin/coolercontrold"
+    # libdrm_amdgpu_sys dlopens libdrm_amdgpu.so.1, and the GPU stress test's
+    # wgpu dlopens libvulkan.so.1 and libEGL.so.1, so nothing links them and
+    # buildInputs alone leaves the daemon unable to find them: AMD detection
+    # degrades, an RDNA3/4 card is never identified, and the stress test finds
+    # no GPU. The RUNPATH resolves them from the binary itself, which also puts
+    # them in the runtime closure.
+    patchelf --add-rpath "${
+      lib.makeLibraryPath [
+        libdrm
+        vulkan-loader
+        libglvnd
+      ]
+    }" "$out/bin/coolercontrold"
 
     buildPythonPath "''${pythonPath[*]}"
     wrapProgram "$out/bin/coolercontrold" \
