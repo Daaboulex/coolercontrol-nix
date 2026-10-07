@@ -27,6 +27,7 @@ rustPlatform.buildRustPackage {
     ./patches/i2c-client-identity.patch
     ./patches/macsmc-hwmon-fan-control.patch
     ./patches/apple-silicon-cpu-device.patch
+    ./patches/tas2764-unsampled-temp.patch
   ];
 
   env.HWDATA_PKGDATADIR = "${hwdata}/share/hwdata";

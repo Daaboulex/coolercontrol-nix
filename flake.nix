@@ -199,6 +199,19 @@
                 fi
                 touch "$out"
               '';
+          checks.tas2764-patch-still-needed = pkgs.runCommand "tas2764-patch-still-needed" { inherit src; } ''
+            file="$src/coolercontrold/daemon/src/repositories/hwmon/temps.rs"
+            if grep -qi tas2764 "$file"; then
+              echo "Upstream's temperature reader now names the TAS2764:"
+              grep -in tas2764 "$file" | head -5
+              echo ""
+              echo "Verify that a TAS2764 answering ENODATA after a resume reads as no failure"
+              echo "and is kept at detection, then delete patches/tas2764-unsampled-temp.patch,"
+              echo "its entry in coolercontrold.nix, and this check."
+              exit 1
+            fi
+            touch "$out"
+          '';
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;
