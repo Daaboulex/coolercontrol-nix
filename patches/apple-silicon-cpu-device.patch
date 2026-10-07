@@ -1,0 +1,435 @@
+feat(cpu): an Apple Silicon processor gets its CPU device
+
+On an Apple Silicon Mac under Linux the CPU repository fails to start
+with "cpuinfo either not found or missing data on this system!", an
+error on every daemon start. arm64 cpuinfo carries no model name and no
+physical id, and the Raspberry Pi fallback reads a Model line Apple
+Silicon does not print either. Even named, no CPU device would be built,
+because devices are only built on a CPU temperature driver, and an
+Apple Silicon Mac has none: its die temperatures come through the SMC.
+Its frequencies are missing too, since cpuinfo prints no cpu MHz.
+
+When the device tree marks the machine apple,arm-platform, the board's
+device tree model names the processor, the same fallback the Raspberry
+Pi gets from its Model line, and one CPU device is built from load and
+frequency alone. The frequencies are each core's cpuinfo_cur_freq, the
+clock the cluster actually runs at, read by the daemon as root. Nothing
+changes on any machine whose device tree does not say apple.
+
+Measured on a J316c MacBook Pro (M1 Max), kernel 7.1.13. The cpuinfo
+fixture is that machine's own.
+
+diff --git a/daemon/resources/tests/cpuinfo/apple_m1_max b/daemon/resources/tests/cpuinfo/apple_m1_max
+new file mode 100644
+index 0000000..03a74d3
+--- /dev/null
++++ b/daemon/resources/tests/cpuinfo/apple_m1_max
+@@ -0,0 +1,90 @@
++processor	: 0
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x028
++CPU revision	: 0
++
++processor	: 1
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x028
++CPU revision	: 0
++
++processor	: 2
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 3
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 4
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 5
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 6
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 7
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 8
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
++processor	: 9
++BogoMIPS	: 48.00
++Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint
++CPU implementer	: 0x61
++CPU architecture: 8
++CPU variant	: 0x2
++CPU part	: 0x029
++CPU revision	: 0
++
+diff --git a/daemon/src/repositories/cpu/apple_silicon.rs b/daemon/src/repositories/cpu/apple_silicon.rs
+new file mode 100644
+index 0000000..022349a
+--- /dev/null
++++ b/daemon/src/repositories/cpu/apple_silicon.rs
+@@ -0,0 +1,124 @@
++// SPDX-FileCopyrightText: 2026 Guy Boldon, Eren Simsek and contributors
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++use std::collections::HashMap;
++use std::ops::Not;
++
++use crate::cc_fs;
++use crate::device::Mhz;
++use crate::repositories::cpu::topology::{CpuFreqs, PhysicalID};
++
++const DEVICE_TREE_COMPATIBLE_PATH: &str = "/sys/firmware/devicetree/base/compatible";
++const DEVICE_TREE_MODEL_PATH: &str = "/sys/firmware/devicetree/base/model";
++const APPLE_SILICON_PLATFORM: &[u8] = b"apple,arm-platform";
++const CURRENT_FREQ_FILE: &str = "cpufreq/cpuinfo_cur_freq";
++pub const CPU_SYSFS_PATH: &str = "/sys/devices/system/cpu";
++pub const DRIVER_NAME: &str = "cpufreq";
++pub const PACKAGE: PhysicalID = 0;
++
++pub async fn board_model() -> Option<String> {
++    let compatible = cc_fs::read_bytes(DEVICE_TREE_COMPATIBLE_PATH).await.ok()?;
++    let model = cc_fs::read_bytes(DEVICE_TREE_MODEL_PATH).await.ok()?;
++    board_model_from(&compatible, &model)
++}
++
++fn board_model_from(compatible: &[u8], model: &[u8]) -> Option<String> {
++    let is_apple_silicon = compatible
++        .split(|byte| *byte == 0)
++        .any(|entry| entry == APPLE_SILICON_PLATFORM);
++    if is_apple_silicon.not() {
++        return None;
++    }
++    let model = String::from_utf8_lossy(model);
++    let model = model.trim_end_matches('\0').trim();
++    model.is_empty().not().then(|| model.to_owned())
++}
++
++pub async fn collect_freqs() -> HashMap<PhysicalID, CpuFreqs> {
++    let Ok(entries) = cc_fs::read_dir(CPU_SYSFS_PATH) else {
++        return HashMap::new();
++    };
++    let mut current_khz = Vec::new();
++    for entry in entries.flatten() {
++        if entry.file_name().to_str().is_none_or(|name| is_cpu_dir(name).not()) {
++            continue;
++        }
++        let Ok(value) = cc_fs::read_sysfs(entry.path().join(CURRENT_FREQ_FILE)).await else {
++            continue;
++        };
++        if let Ok(khz) = value.trim().parse::<u32>() {
++            current_khz.push(khz);
++        }
++    }
++    freqs_from_khz(&current_khz)
++}
++
++fn is_cpu_dir(name: &str) -> bool {
++    name.strip_prefix("cpu")
++        .is_some_and(|number| number.is_empty().not() && number.bytes().all(|b| b.is_ascii_digit()))
++}
++
++#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
++fn freqs_from_khz(current_khz: &[u32]) -> HashMap<PhysicalID, CpuFreqs> {
++    let (Some(min), Some(max)) = (current_khz.iter().min(), current_khz.iter().max()) else {
++        return HashMap::new();
++    };
++    let to_mhz = |khz: f64| (khz / 1000.).round() as Mhz;
++    #[allow(clippy::cast_precision_loss)]
++    let avg = current_khz.iter().copied().map(f64::from).sum::<f64>() / current_khz.len() as f64;
++    HashMap::from([(
++        PACKAGE,
++        CpuFreqs {
++            min: to_mhz(f64::from(*min)),
++            max: to_mhz(f64::from(*max)),
++            avg: to_mhz(avg),
++        },
++    )])
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const M1_MAX_COMPATIBLE: &[u8] = b"apple,j316c\0apple,t6001\0apple,arm-platform\0";
++    const M1_MAX_MODEL: &[u8] = b"Apple MacBook Pro (16-inch, M1 Max, 2021)\0";
++
++    #[test]
++    fn an_apple_silicon_device_tree_names_the_board() {
++        assert_eq!(
++            board_model_from(M1_MAX_COMPATIBLE, M1_MAX_MODEL).as_deref(),
++            Some("Apple MacBook Pro (16-inch, M1 Max, 2021)")
++        );
++    }
++
++    #[test]
++    fn any_other_device_tree_is_left_alone() {
++        let raspberry_pi = b"raspberrypi,5-model-b\0brcm,bcm2712\0";
++        assert_eq!(board_model_from(raspberry_pi, b"Raspberry Pi 5\0"), None);
++        assert_eq!(board_model_from(b"apple,arm-platform-x\0", M1_MAX_MODEL), None);
++        assert_eq!(board_model_from(M1_MAX_COMPATIBLE, b"\0"), None);
++    }
++
++    #[test]
++    fn only_numbered_cpu_directories_are_cores() {
++        assert!(is_cpu_dir("cpu0"));
++        assert!(is_cpu_dir("cpu10"));
++        assert!(is_cpu_dir("cpu").not());
++        assert!(is_cpu_dir("cpufreq").not());
++        assert!(is_cpu_dir("cpuidle").not());
++    }
++
++    #[test]
++    fn frequencies_span_every_core_of_the_one_package() {
++        let freqs = freqs_from_khz(&[600_000, 2_064_000, 3_228_000, 3_036_000]);
++        assert_eq!(
++            freqs.get(&PACKAGE),
++            Some(&CpuFreqs {
++                min: 600,
++                max: 3228,
++                avg: 2232,
++            })
++        );
++        assert!(freqs_from_khz(&[]).is_empty());
++    }
++}
+diff --git a/daemon/src/repositories/cpu/cpu_repo.rs b/daemon/src/repositories/cpu/cpu_repo.rs
+index f3b0132..2c8b580 100644
+--- a/daemon/src/repositories/cpu/cpu_repo.rs
++++ b/daemon/src/repositories/cpu/cpu_repo.rs
+@@ -16,6 +16,7 @@ use crate::device::{
+     DriverType, Status, TempInfo, TempStatus, Watts, UID,
+ };
+ use crate::overrides::OverridesController;
++use crate::repositories::cpu::apple_silicon;
+ use crate::repositories::cpu::association::{
+     self, CpuAssociation, CpuDriver, DriverCensus, ZoneID,
+ };
+@@ -68,6 +69,7 @@ pub struct CpuRepo {
+     preloaded_statuses: RefCell<HashMap<CpuAssociation, (Vec<ChannelStatus>, Vec<TempStatus>)>>,
+     energy_counters: HashMap<PhysicalID, Cell<f64>>,
+     poll_rate: f64,
++    apple_silicon: bool,
+ }
+ 
+ impl CpuRepo {
+@@ -76,6 +78,7 @@ impl CpuRepo {
+             config,
+             overrides,
+             devices: HashMap::new(),
++            apple_silicon: false,
+             topology: CpuTopology::default(),
+             cpu_percent_collector: RefCell::new(CpuPercentCollector::new()?),
+             cpu_load_percents: RefCell::new(Vec::new()),
+@@ -153,7 +156,10 @@ impl CpuRepo {
+     /// Reads cpuinfo and takes what it says about this machine's processors.
+     async fn set_topology(&mut self, cpuinfo_path: &Path) -> Result<()> {
+         let cpu_info_data = cc_fs::read_txt(cpuinfo_path).await?;
+-        self.topology = CpuTopology::parse(&cpu_info_data)?;
++        let apple_silicon_model = apple_silicon::board_model().await;
++        self.apple_silicon = apple_silicon_model.is_some();
++        self.topology =
++            CpuTopology::parse_with_board_model(&cpu_info_data, apple_silicon_model.as_deref())?;
+         trace!("CPU topology: {:?}", self.topology);
+         Ok(())
+     }
+@@ -306,7 +312,10 @@ impl CpuRepo {
+     }
+ 
+     /// The frequencies of every package, read fresh from cpuinfo.
+-    async fn collect_freq(cpuinfo_path: &Path) -> HashMap<PhysicalID, CpuFreqs> {
++    async fn collect_freq(&self, cpuinfo_path: &Path) -> HashMap<PhysicalID, CpuFreqs> {
++        if self.apple_silicon {
++            return apple_silicon::collect_freqs().await;
++        }
+         let Ok(cpu_info_data) = cc_fs::read_txt(cpuinfo_path).await else {
+             return HashMap::new();
+         };
+@@ -595,7 +604,7 @@ impl CpuRepo {
+     ) -> HashMap<CpuAssociation, HwmonDriverInfo> {
+         let mut hwmon_devices = HashMap::new();
+         let num_of_cpus = self.topology.package_count();
+-        let mut cpu_freqs = Self::collect_freq(CPUINFO_PATH.as_ref()).await;
++        let mut cpu_freqs = self.collect_freq(CPUINFO_PATH.as_ref()).await;
+         if cpu_freqs.is_empty() {
+             // should warn for multi-cpus, but info otherwise
+             let lvl = if num_of_cpus > 1 {
+@@ -750,6 +759,31 @@ impl CpuRepo {
+         })
+     }
+ 
++    async fn init_apple_silicon_cpu_device(&self) -> Option<HwmonDriverInfo> {
++        let association = CpuAssociation::Socket(apple_silicon::PACKAGE);
++        let type_index = association::device_type_index(&self.topology, association)?;
++        let cpu_name = self.topology.model_name(association.physical_id())?;
++        let device_uid = Device::create_uid_from(&cpu_name, DeviceType::CPU, type_index, None);
++        let cc_device_setting = self
++            .config
++            .get_cc_settings_for_device(&device_uid)
++            .unwrap_or(None);
++        if cc_device_setting.is_some_and(|setting| setting.disable) {
++            info!("Skipping disabled device: {cpu_name} with UID: {device_uid}");
++            return None;
++        }
++        let mut cpu_freqs = self.collect_freq(CPUINFO_PATH.as_ref()).await;
++        let channels = self
++            .init_socket_channels(apple_silicon::PACKAGE, &mut cpu_freqs)
++            .await;
++        Some(HwmonDriverInfo {
++            name: apple_silicon::DRIVER_NAME.to_owned(),
++            path: PathBuf::from(apple_silicon::CPU_SYSFS_PATH),
++            channels,
++            ..Default::default()
++        })
++    }
++
+     /// Seeds a processor's energy counter with a real reading, which `request_status` needs
+     /// before it can take a delta. A failed initial read seeds 0, so the next good read still
+     /// produces a valid forward delta.
+@@ -793,7 +827,12 @@ impl Repository for CpuRepo {
+         let potential_cpu_paths = Self::get_potential_cpu_paths().await;
+ 
+         let num_of_cpus = self.topology.package_count();
+-        let hwmon_devices = self.init_hwmon_cpu_devices(potential_cpu_paths).await;
++        let mut hwmon_devices = self.init_hwmon_cpu_devices(potential_cpu_paths).await;
++        if hwmon_devices.is_empty() && self.apple_silicon {
++            if let Some(driver) = self.init_apple_silicon_cpu_device().await {
++                hwmon_devices.insert(CpuAssociation::Socket(apple_silicon::PACKAGE), driver);
++            }
++        }
+         if hwmon_devices.is_empty() {
+             info!("No CPU specific HWMON devices found.");
+         } else {
+@@ -812,7 +851,7 @@ impl Repository for CpuRepo {
+             }
+         }
+ 
+-        let mut cpu_freqs = Self::collect_freq(CPUINFO_PATH.as_ref()).await;
++        let mut cpu_freqs = self.collect_freq(CPUINFO_PATH.as_ref()).await;
+         // A zone-keyed device has no cpuinfo entry of its own. The name has to be resolved the
+         // same way it was when the device was built, or every such device would be dropped here.
+         for (association, driver) in hwmon_devices {
+@@ -940,7 +979,7 @@ impl Repository for CpuRepo {
+ 
+     async fn preload_statuses(self: Rc<Self>) {
+         let start_update = Instant::now();
+-        let mut cpu_freqs = Self::collect_freq(CPUINFO_PATH.as_ref()).await;
++        let mut cpu_freqs = self.collect_freq(CPUINFO_PATH.as_ref()).await;
+         self.sample_cpu_load().await;
+         moro_local::async_scope!(|scope| {
+             for cpu_device in self.devices.values() {
+diff --git a/daemon/src/repositories/cpu/mod.rs b/daemon/src/repositories/cpu/mod.rs
+index 50cebee..961fe77 100644
+--- a/daemon/src/repositories/cpu/mod.rs
++++ b/daemon/src/repositories/cpu/mod.rs
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: 2022 Guy Boldon, Eren Simsek and contributors
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ 
++mod apple_silicon;
+ mod association;
+ pub mod cpu_repo;
+ mod percent;
+@@ -42,6 +43,7 @@ pub mod fixtures {
+     cpuinfo!(INTEL_SINGLE_CPU, "intel_single_cpu");
+     cpuinfo!(INTEL_DOUBLE_CPU, "intel_double_cpu");
+     cpuinfo!(RASPBERRY_PI_5, "raspberry_pi_5");
++    cpuinfo!(APPLE_M1_MAX, "apple_m1_max");
+ 
+     /// Two packages whose physical ids run opposite to their APIC ids. Real firmware rarely does
+     /// this, but it is the only shape that tells the two orderings apart.
+diff --git a/daemon/src/repositories/cpu/topology.rs b/daemon/src/repositories/cpu/topology.rs
+index e7c16c9..db32559 100644
+--- a/daemon/src/repositories/cpu/topology.rs
++++ b/daemon/src/repositories/cpu/topology.rs
+@@ -47,6 +47,13 @@ impl CpuTopology {
+     /// Parses cpuinfo text. Errors when it names no processor that devices can be keyed by, which
+     /// is what the caller needs before it can build any CPU device at all.
+     pub fn parse(cpu_info_data: &str) -> Result<Self> {
++        Self::parse_with_board_model(cpu_info_data, None)
++    }
++
++    pub fn parse_with_board_model(
++        cpu_info_data: &str,
++        fallback_board_model: Option<&str>,
++    ) -> Result<Self> {
+         let entries = parse_processor_entries(cpu_info_data)?;
+         let mut packages = BTreeSet::new();
+         let mut model_names = BTreeMap::new();
+@@ -63,7 +70,7 @@ impl CpuTopology {
+         if packages.is_empty() && model_names.is_empty() {
+             // Some CPUs, like the Raspberry Pi, don't have a physical id, so we need to fake one,
+             // they do have a model name though.
+-            if let Some(board_model) = board_model(cpu_info_data) {
++            if let Some(board_model) = board_model(cpu_info_data).or(fallback_board_model) {
+                 packages.insert(0);
+                 model_names.insert(0, board_model.to_owned());
+             }
+@@ -682,4 +689,15 @@ mod tests {
+         assert!(parse_freqs(fixtures::RASPBERRY_PI_5).is_empty());
+         assert!(parse_freqs("").is_empty());
+     }
++
++    #[test]
++    fn apple_silicon_is_named_by_its_device_tree_model() {
++        let model = "Apple MacBook Pro (16-inch, M1 Max, 2021)";
++        assert!(CpuTopology::parse(fixtures::APPLE_M1_MAX).is_err());
++        let topology =
++            CpuTopology::parse_with_board_model(fixtures::APPLE_M1_MAX, Some(model)).unwrap();
++        assert_eq!(topology.package_count(), 1);
++        assert_eq!(topology.model_name(Some(0)).as_deref(), Some(model));
++        assert!(parse_freqs(fixtures::APPLE_M1_MAX).is_empty());
++    }
+ }

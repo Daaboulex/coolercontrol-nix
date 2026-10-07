@@ -183,6 +183,22 @@
             fi
             touch "$out"
           '';
+          checks.apple-silicon-cpu-patch-still-needed =
+            pkgs.runCommand "apple-silicon-cpu-patch-still-needed" { inherit src; }
+              ''
+                dir="$src/coolercontrold/daemon/src/repositories/cpu"
+                if grep -rq -e devicetree -e arm-platform "$dir"; then
+                  echo "Upstream's CPU repository now reads the device tree:"
+                  grep -rn -e devicetree -e arm-platform "$dir" | head -5
+                  echo ""
+                  echo "Apple Silicon may have its CPU device upstream. Verify that the daemon"
+                  echo "starts on an Apple Silicon Mac with no CPU repository error and shows CPU"
+                  echo "load and frequency, then delete patches/apple-silicon-cpu-device.patch,"
+                  echo "its entry in coolercontrold.nix, and this check."
+                  exit 1
+                fi
+                touch "$out"
+              '';
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;
