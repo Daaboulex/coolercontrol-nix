@@ -26,6 +26,30 @@ def _load_token() -> str | None:
     return os.environ.get("COOLERCONTROL_TOKEN")
 
 
+def latest_statuses(
+    status_reply: dict | None, devices_reply: dict | None
+) -> list[dict]:
+    names = {
+        device["uid"]: device.get("name", device["uid"])
+        for device in (devices_reply or {}).get("devices", [])
+    }
+    return [
+        {
+            "uid": device["uid"],
+            "name": names.get(device["uid"], device["uid"]),
+            "type": device.get("type", ""),
+            "status": (device.get("status_history") or [{}])[-1],
+        }
+        for device in (status_reply or {}).get("devices", [])
+    ]
+
+
+def device_statuses(base: str = DEFAULT_BASE) -> list[dict]:
+    return latest_statuses(
+        api("POST", "/status", base, json={}), api("GET", "/devices", base)
+    )
+
+
 def api(
     method: str, path: str, base: str = DEFAULT_BASE, **kwargs
 ) -> dict | list | None:

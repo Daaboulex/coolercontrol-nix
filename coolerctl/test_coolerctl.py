@@ -474,3 +474,49 @@ class TestExportConfig:
         assert result.exit_code == 1
         assert _body(result.stdout).count("{") == _body(result.stdout).count("}")
         assert result.stdout.rstrip().endswith("}")
+
+
+STATUS_REPLY = {
+    "devices": [
+        {
+            "uid": "smc",
+            "type": "Hwmon",
+            "type_index": 2,
+            "status_history": [
+                {"temps": [], "channels": [{"name": "fan1", "rpm": 1500}]},
+                {
+                    "temps": [],
+                    "channels": [{"name": "fan1", "rpm": 2461, "duty": 25.0}],
+                },
+            ],
+        },
+        {"uid": "orphan", "type": "CPU", "type_index": 1, "status_history": []},
+    ]
+}
+DEVICES_REPLY = {"devices": [{"uid": "smc", "name": "macsmc_hwmon", "type": "Hwmon"}]}
+
+
+class TestDeviceStatuses:
+    def test_latest_status_is_named_from_the_device_list(self):
+        from coolerctl.api import latest_statuses
+
+        statuses = latest_statuses(STATUS_REPLY, DEVICES_REPLY)
+        assert statuses[0]["name"] == "macsmc_hwmon"
+        assert statuses[0]["status"]["channels"][0]["rpm"] == 2461
+        assert statuses[1]["name"] == "orphan"
+        assert statuses[1]["status"] == {}
+        assert latest_statuses(None, None) == []
+
+    def test_fans_sends_a_json_body_and_reads_the_devices_reply(self):
+        calls = []
+
+        def fake_api(method, path, base=None, **kwargs):
+            calls.append((method, path, kwargs))
+            return STATUS_REPLY if path == "/status" else DEVICES_REPLY
+
+        with patch("coolerctl.api.api", side_effect=fake_api):
+            result = CliRunner().invoke(cli, ["fans"])
+        assert result.exit_code == 0, result.output
+        assert ("POST", "/status", {"json": {}}) in calls
+        assert "macsmc_hwmon" in result.output
+        assert "2461 RPM" in result.output

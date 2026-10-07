@@ -4,7 +4,7 @@ import sys
 
 import click
 
-from .api import api
+from .api import api, device_statuses
 from .output import BOLD, GREEN, RED, YELLOW, _c, _temp_color, fmt_json
 
 
@@ -89,33 +89,22 @@ def status(ctx, device_uid: str | None, channel: str | None):
             return
         fmt_json(data)
         return
-    elif device_uid:
-        data = api("GET", f"/status/{device_uid}", base)
-    else:
-        data = api("POST", "/status", base)
+    devices = device_statuses(base)
+    if device_uid:
+        devices = [device for device in devices if device["uid"] == device_uid]
 
     if ctx.obj["json"]:
-        fmt_json(data)
+        fmt_json(devices)
         return
 
-    devices = data if isinstance(data, list) else [data] if data else []
     for device in devices:
-        uid = device.get("d_uid", device.get("uid", "?"))
-        name = device.get("d_name", uid)
-        d_type = device.get("d_type", "")
+        uid = device["uid"]
         click.echo(f"\n{'=' * 60}")
-        click.echo(f"Device: {_c(BOLD, name)} ({d_type}) [{uid[:20]}]")
+        click.echo(
+            f"Device: {_c(BOLD, device['name'])} ({device['type']}) [{uid[:20]}]"
+        )
         click.echo(f"{'=' * 60}")
-        status_entries = device.get("status", device.get("status_history", []))
-        if isinstance(status_entries, list) and status_entries:
-            entry = (
-                status_entries[-1]
-                if isinstance(status_entries[-1], dict)
-                else status_entries
-            )
-            _print_status_entry(entry)
-        elif isinstance(status_entries, dict):
-            _print_status_entry(status_entries)
+        _print_status_entry(device["status"])
 
 
 def _print_status_entry(entry):
@@ -136,7 +125,7 @@ def _print_status_entry(entry):
             if ch.get("rpm") is not None:
                 parts.append(f"{ch['rpm']:5d} RPM")
             if ch.get("freq") is not None:
-                parts.append(f"{ch['freq']} Hz")
+                parts.append(f"{ch['freq']} MHz")
             if ch.get("watts") is not None:
                 parts.append(f"{ch['watts']:.1f}W")
             info = "  ".join(parts) if parts else "no data"

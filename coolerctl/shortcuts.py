@@ -2,7 +2,7 @@
 
 import click
 
-from .api import api
+from .api import api, device_statuses
 from .output import _temp_color, fmt_json
 
 
@@ -28,29 +28,26 @@ def quick_fan(ctx, device_uid: str, channel: str, duty: int):
 @click.pass_context
 def quick_temps(ctx):
     """Quick: show all temperatures with color coding."""
-    data = api("POST", "/status", ctx.obj["base"])
-    for device in data or []:
-        name = device.get("d_name", "?")
-        for status_entry in device.get("status", []):
-            for t in status_entry.get("temps", []):
-                temp_val = t["temp"]
-                click.echo(f"  {name:20s} {t['name']:30s} {_temp_color(temp_val)}C")
+    for device in device_statuses(ctx.obj["base"]):
+        for t in device["status"].get("temps", []):
+            click.echo(
+                f"  {device['name']:20s} {t['name']:30s} {_temp_color(t['temp'])}C"
+            )
 
 
 @click.command("fans")
 @click.pass_context
 def quick_fans(ctx):
     """Quick: show all fan speeds and duties."""
-    data = api("POST", "/status", ctx.obj["base"])
-    for device in data or []:
-        name = device.get("d_name", "?")
-        for status_entry in device.get("status", []):
-            for ch in status_entry.get("channels", []):
-                duty = ch.get("duty")
-                rpm = ch.get("rpm")
-                duty_str = f"{duty:5.1f}%" if duty is not None else "  N/A"
-                rpm_str = f"{rpm:5d} RPM" if rpm is not None else ""
-                click.echo(f"  {name:20s} {ch['name']:30s} {duty_str}  {rpm_str}")
+    for device in device_statuses(ctx.obj["base"]):
+        for ch in device["status"].get("channels", []):
+            duty = ch.get("duty")
+            rpm = ch.get("rpm")
+            if duty is None and rpm is None:
+                continue
+            duty_str = f"{duty:5.1f}%" if duty is not None else "  N/A"
+            rpm_str = f"{rpm:5d} RPM" if rpm is not None else ""
+            click.echo(f"  {device['name']:20s} {ch['name']:30s} {duty_str}  {rpm_str}")
 
 
 @click.command("thinkpad-fan-control")
