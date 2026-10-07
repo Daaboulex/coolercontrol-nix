@@ -64,6 +64,10 @@ in
       ];
       services.coolercontrold = {
         wantedBy = [ "multi-user.target" ];
+        path = [
+          pkgs.which
+          pkgs.stress-ng
+        ];
         serviceConfig = {
           StateDirectory = "coolercontrol";
         };
