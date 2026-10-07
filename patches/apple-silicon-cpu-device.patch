@@ -12,12 +12,17 @@ Its frequencies are missing too, since cpuinfo prints no cpu MHz.
 When the device tree marks the machine apple,arm-platform, the board's
 device tree model names the processor, the same fallback the Raspberry
 Pi gets from its Model line, and one CPU device is built from load and
-frequency alone. The frequencies are each core's cpuinfo_cur_freq, the
-clock the cluster actually runs at, read by the daemon as root. Nothing
-changes on any machine whose device tree does not say apple.
+frequency alone. The frequencies are cpuinfo_cur_freq, the clock each
+cluster actually runs at, read by the daemon as root: the average,
+highest and lowest over every core, and one channel per cluster, named
+Efficiency or Performance by the cluster's maximum clock. The device
+names the kernel's frequency driver and its sysfs directory instead of
+probing for a hwmon device path it does not have. Nothing changes on any
+machine whose device tree does not say apple.
 
-Measured on a J316c MacBook Pro (M1 Max), kernel 7.1.13. The cpuinfo
-fixture is that machine's own.
+Measured on a J316c MacBook Pro (M1 Max), kernel 7.1.13, three clusters
+(cpufreq policy0 at up to 2064 MHz, policy2 and policy6 at up to 3228
+MHz). The cpuinfo fixture is that machine's own.
 
 diff --git a/daemon/resources/tests/cpuinfo/apple_m1_max b/daemon/resources/tests/cpuinfo/apple_m1_max
 new file mode 100644
@@ -117,24 +122,32 @@ index 0000000..03a74d3
 +
 diff --git a/daemon/src/repositories/cpu/apple_silicon.rs b/daemon/src/repositories/cpu/apple_silicon.rs
 new file mode 100644
-index 0000000..022349a
+index 0000000..ba3ff6d
 --- /dev/null
 +++ b/daemon/src/repositories/cpu/apple_silicon.rs
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,331 @@
 +// SPDX-FileCopyrightText: 2026 Guy Boldon, Eren Simsek and contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
 +use std::collections::HashMap;
 +use std::ops::Not;
++use std::path::Path;
 +
 +use crate::cc_fs;
-+use crate::device::Mhz;
++use crate::device::{ChannelStatus, Mhz};
 +use crate::repositories::cpu::topology::{CpuFreqs, PhysicalID};
++use crate::repositories::hwmon::hwmon_repo::{HwmonChannelInfo, HwmonChannelType};
 +
 +const DEVICE_TREE_COMPATIBLE_PATH: &str = "/sys/firmware/devicetree/base/compatible";
 +const DEVICE_TREE_MODEL_PATH: &str = "/sys/firmware/devicetree/base/model";
 +const APPLE_SILICON_PLATFORM: &[u8] = b"apple,arm-platform";
++const CPUFREQ_POLICY_PATH: &str = "/sys/devices/system/cpu/cpufreq";
 +const CURRENT_FREQ_FILE: &str = "cpufreq/cpuinfo_cur_freq";
++const POLICY_CURRENT_FREQ_FILE: &str = "cpuinfo_cur_freq";
++const POLICY_MAX_FREQ_FILE: &str = "cpuinfo_max_freq";
++const SCALING_DRIVER_FILE: &str = "cpufreq/policy0/scaling_driver";
++const CLUSTER_FREQ_PREFIX: &str = "CPU Freq";
++const FIRST_CLUSTER_CHANNEL_NUMBER: u8 = 3;
 +pub const CPU_SYSFS_PATH: &str = "/sys/devices/system/cpu";
 +pub const DRIVER_NAME: &str = "cpufreq";
 +pub const PACKAGE: PhysicalID = 0;
@@ -157,6 +170,18 @@ index 0000000..022349a
 +    model.is_empty().not().then(|| model.to_owned())
 +}
 +
++pub async fn scaling_driver() -> Option<String> {
++    cc_fs::read_sysfs(format!("{CPU_SYSFS_PATH}/{SCALING_DRIVER_FILE}"))
++        .await
++        .ok()
++        .map(|name| name.trim().to_owned())
++        .filter(|name| name.is_empty().not())
++}
++
++async fn read_khz(path: &Path) -> Option<u32> {
++    cc_fs::read_sysfs(path).await.ok()?.trim().parse().ok()
++}
++
 +pub async fn collect_freqs() -> HashMap<PhysicalID, CpuFreqs> {
 +    let Ok(entries) = cc_fs::read_dir(CPU_SYSFS_PATH) else {
 +        return HashMap::new();
@@ -166,14 +191,106 @@ index 0000000..022349a
 +        if entry.file_name().to_str().is_none_or(|name| is_cpu_dir(name).not()) {
 +            continue;
 +        }
-+        let Ok(value) = cc_fs::read_sysfs(entry.path().join(CURRENT_FREQ_FILE)).await else {
-+            continue;
-+        };
-+        if let Ok(khz) = value.trim().parse::<u32>() {
++        if let Some(khz) = read_khz(&entry.path().join(CURRENT_FREQ_FILE)).await {
 +            current_khz.push(khz);
 +        }
 +    }
 +    freqs_from_khz(&current_khz)
++}
++
++pub async fn collect_cluster_freqs() -> Vec<ChannelStatus> {
++    let Ok(entries) = cc_fs::read_dir(CPUFREQ_POLICY_PATH) else {
++        return Vec::new();
++    };
++    let mut policies = Vec::new();
++    for entry in entries.flatten() {
++        let Some(number) = entry.file_name().to_str().and_then(policy_number) else {
++            continue;
++        };
++        let path = entry.path();
++        let Some(max_khz) = read_khz(&path.join(POLICY_MAX_FREQ_FILE)).await else {
++            continue;
++        };
++        let current_khz = read_khz(&path.join(POLICY_CURRENT_FREQ_FILE)).await;
++        policies.push(Policy {
++            number,
++            max_khz,
++            current_khz,
++        });
++    }
++    cluster_statuses(policies)
++}
++
++pub fn cluster_channels(cluster_freqs: &[ChannelStatus]) -> Vec<HwmonChannelInfo> {
++    (FIRST_CLUSTER_CHANNEL_NUMBER..)
++        .zip(cluster_freqs)
++        .map(|(number, cluster)| HwmonChannelInfo {
++            hwmon_type: HwmonChannelType::Freq,
++            number,
++            name: cluster.name.clone(),
++            label: Some(cluster.name.clone()),
++            ..Default::default()
++        })
++        .collect()
++}
++
++pub fn fill_cluster_freqs(cluster_freqs: &[ChannelStatus], statuses: &mut [ChannelStatus]) {
++    for status in statuses {
++        if let Some(cluster) = cluster_freqs.iter().find(|c| c.name == status.name) {
++            status.freq = cluster.freq;
++        }
++    }
++}
++
++struct Policy {
++    number: u32,
++    max_khz: u32,
++    current_khz: Option<u32>,
++}
++
++fn policy_number(name: &str) -> Option<u32> {
++    name.strip_prefix("policy")?.parse().ok()
++}
++
++fn cluster_statuses(mut policies: Vec<Policy>) -> Vec<ChannelStatus> {
++    policies.sort_by_key(|policy| policy.number);
++    let max_khz: Vec<u32> = policies.iter().map(|policy| policy.max_khz).collect();
++    cluster_channel_names(&max_khz)
++        .into_iter()
++        .zip(policies)
++        .filter_map(|(name, policy)| {
++            policy.current_khz.map(|khz| ChannelStatus {
++                name,
++                freq: Some(khz_to_mhz(f64::from(khz))),
++                ..Default::default()
++            })
++        })
++        .collect()
++}
++
++fn cluster_channel_names(max_khz: &[u32]) -> Vec<String> {
++    let lowest = max_khz.iter().min().copied();
++    let mixed = max_khz.iter().any(|max| Some(*max) != lowest);
++    let kind = |max: u32| match (mixed, Some(max) == lowest) {
++        (false, _) => "",
++        (true, true) => "Efficiency ",
++        (true, false) => "Performance ",
++    };
++    let mut seen: HashMap<&str, usize> = HashMap::new();
++    max_khz
++        .iter()
++        .map(|max| {
++            let cluster_kind = kind(*max);
++            let of_kind = max_khz.iter().filter(|m| kind(**m) == cluster_kind).count();
++            let nth = seen.entry(cluster_kind).or_default();
++            *nth += 1;
++            if of_kind > 1 {
++                format!("{CLUSTER_FREQ_PREFIX} {cluster_kind}Cluster {nth}")
++            } else {
++                format!("{CLUSTER_FREQ_PREFIX} {cluster_kind}Cluster")
++            }
++        })
++        .collect()
 +}
 +
 +fn is_cpu_dir(name: &str) -> bool {
@@ -182,19 +299,22 @@ index 0000000..022349a
 +}
 +
 +#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
++fn khz_to_mhz(khz: f64) -> Mhz {
++    (khz / 1000.).round() as Mhz
++}
++
 +fn freqs_from_khz(current_khz: &[u32]) -> HashMap<PhysicalID, CpuFreqs> {
 +    let (Some(min), Some(max)) = (current_khz.iter().min(), current_khz.iter().max()) else {
 +        return HashMap::new();
 +    };
-+    let to_mhz = |khz: f64| (khz / 1000.).round() as Mhz;
 +    #[allow(clippy::cast_precision_loss)]
 +    let avg = current_khz.iter().copied().map(f64::from).sum::<f64>() / current_khz.len() as f64;
 +    HashMap::from([(
 +        PACKAGE,
 +        CpuFreqs {
-+            min: to_mhz(f64::from(*min)),
-+            max: to_mhz(f64::from(*max)),
-+            avg: to_mhz(avg),
++            min: khz_to_mhz(f64::from(*min)),
++            max: khz_to_mhz(f64::from(*max)),
++            avg: khz_to_mhz(avg),
 +        },
 +    )])
 +}
@@ -229,6 +349,9 @@ index 0000000..022349a
 +        assert!(is_cpu_dir("cpu").not());
 +        assert!(is_cpu_dir("cpufreq").not());
 +        assert!(is_cpu_dir("cpuidle").not());
++        assert_eq!(policy_number("policy6"), Some(6));
++        assert_eq!(policy_number("policy"), None);
++        assert_eq!(policy_number("boost"), None);
 +    }
 +
 +    #[test]
@@ -244,9 +367,98 @@ index 0000000..022349a
 +        );
 +        assert!(freqs_from_khz(&[]).is_empty());
 +    }
++
++    #[test]
++    fn clusters_are_named_by_their_kind() {
++        assert_eq!(
++            cluster_channel_names(&[2_064_000, 3_228_000, 3_228_000]),
++            [
++                "CPU Freq Efficiency Cluster",
++                "CPU Freq Performance Cluster 1",
++                "CPU Freq Performance Cluster 2"
++            ]
++        );
++        assert_eq!(
++            cluster_channel_names(&[2_064_000, 3_204_000]),
++            ["CPU Freq Efficiency Cluster", "CPU Freq Performance Cluster"]
++        );
++        assert_eq!(
++            cluster_channel_names(&[2_064_000, 2_064_000, 3_228_000, 3_228_000]),
++            [
++                "CPU Freq Efficiency Cluster 1",
++                "CPU Freq Efficiency Cluster 2",
++                "CPU Freq Performance Cluster 1",
++                "CPU Freq Performance Cluster 2"
++            ]
++        );
++        assert_eq!(
++            cluster_channel_names(&[2_000_000, 2_000_000]),
++            ["CPU Freq Cluster 1", "CPU Freq Cluster 2"]
++        );
++    }
++
++    #[test]
++    fn cluster_statuses_follow_policy_order_and_skip_an_unreadable_clock() {
++        let statuses = cluster_statuses(vec![
++            Policy {
++                number: 6,
++                max_khz: 3_228_000,
++                current_khz: None,
++            },
++            Policy {
++                number: 0,
++                max_khz: 2_064_000,
++                current_khz: Some(972_000),
++            },
++            Policy {
++                number: 2,
++                max_khz: 3_228_000,
++                current_khz: Some(3_036_000),
++            },
++        ]);
++        let named: Vec<(&str, Option<Mhz>)> = statuses
++            .iter()
++            .map(|status| (status.name.as_str(), status.freq))
++            .collect();
++        assert_eq!(
++            named,
++            [
++                ("CPU Freq Efficiency Cluster", Some(972)),
++                ("CPU Freq Performance Cluster 1", Some(3036))
++            ]
++        );
++    }
++
++    #[test]
++    fn cluster_clocks_fill_their_own_channels_only() {
++        let clusters = [ChannelStatus {
++            name: "CPU Freq Efficiency Cluster".to_string(),
++            freq: Some(972),
++            ..Default::default()
++        }];
++        let mut statuses = vec![
++            ChannelStatus {
++                name: "CPU Freq Efficiency Cluster".to_string(),
++                freq: Some(0),
++                ..Default::default()
++            },
++            ChannelStatus {
++                name: "CPU Freq Max".to_string(),
++                freq: Some(3036),
++                ..Default::default()
++            },
++        ];
++        fill_cluster_freqs(&clusters, &mut statuses);
++        assert_eq!(statuses[0].freq, Some(972));
++        assert_eq!(statuses[1].freq, Some(3036));
++        let channels = cluster_channels(&clusters);
++        assert_eq!(channels.len(), 1);
++        assert_eq!(channels[0].number, FIRST_CLUSTER_CHANNEL_NUMBER);
++        assert_eq!(channels[0].hwmon_type, HwmonChannelType::Freq);
++    }
 +}
 diff --git a/daemon/src/repositories/cpu/cpu_repo.rs b/daemon/src/repositories/cpu/cpu_repo.rs
-index f3b0132..2c8b580 100644
+index f3b0132..ccaeb3f 100644
 --- a/daemon/src/repositories/cpu/cpu_repo.rs
 +++ b/daemon/src/repositories/cpu/cpu_repo.rs
 @@ -16,6 +16,7 @@ use crate::device::{
@@ -257,23 +469,25 @@ index f3b0132..2c8b580 100644
  use crate::repositories::cpu::association::{
      self, CpuAssociation, CpuDriver, DriverCensus, ZoneID,
  };
-@@ -68,6 +69,7 @@ pub struct CpuRepo {
+@@ -68,6 +69,8 @@ pub struct CpuRepo {
      preloaded_statuses: RefCell<HashMap<CpuAssociation, (Vec<ChannelStatus>, Vec<TempStatus>)>>,
      energy_counters: HashMap<PhysicalID, Cell<f64>>,
      poll_rate: f64,
 +    apple_silicon: bool,
++    cluster_freqs: RefCell<Vec<ChannelStatus>>,
  }
  
  impl CpuRepo {
-@@ -76,6 +78,7 @@ impl CpuRepo {
+@@ -76,6 +79,8 @@ impl CpuRepo {
              config,
              overrides,
              devices: HashMap::new(),
 +            apple_silicon: false,
++            cluster_freqs: RefCell::new(Vec::new()),
              topology: CpuTopology::default(),
              cpu_percent_collector: RefCell::new(CpuPercentCollector::new()?),
              cpu_load_percents: RefCell::new(Vec::new()),
-@@ -153,7 +156,10 @@ impl CpuRepo {
+@@ -153,7 +158,10 @@ impl CpuRepo {
      /// Reads cpuinfo and takes what it says about this machine's processors.
      async fn set_topology(&mut self, cpuinfo_path: &Path) -> Result<()> {
          let cpu_info_data = cc_fs::read_txt(cpuinfo_path).await?;
@@ -285,19 +499,34 @@ index f3b0132..2c8b580 100644
          trace!("CPU topology: {:?}", self.topology);
          Ok(())
      }
-@@ -306,7 +312,10 @@ impl CpuRepo {
+@@ -306,7 +314,12 @@ impl CpuRepo {
      }
  
      /// The frequencies of every package, read fresh from cpuinfo.
 -    async fn collect_freq(cpuinfo_path: &Path) -> HashMap<PhysicalID, CpuFreqs> {
 +    async fn collect_freq(&self, cpuinfo_path: &Path) -> HashMap<PhysicalID, CpuFreqs> {
 +        if self.apple_silicon {
++            self.cluster_freqs
++                .replace(apple_silicon::collect_cluster_freqs().await);
 +            return apple_silicon::collect_freqs().await;
 +        }
          let Ok(cpu_info_data) = cc_fs::read_txt(cpuinfo_path).await else {
              return HashMap::new();
          };
-@@ -595,7 +604,7 @@ impl CpuRepo {
+@@ -455,6 +468,12 @@ impl CpuRepo {
+         }
+         if contains_freq {
+             Self::get_filtered_freqs(physical_id, driver, cpu_freqs, &mut status_channels);
++            if self.apple_silicon {
++                apple_silicon::fill_cluster_freqs(
++                    &self.cluster_freqs.borrow(),
++                    &mut status_channels,
++                );
++            }
+         }
+         status_channels
+     }
+@@ -595,7 +614,7 @@ impl CpuRepo {
      ) -> HashMap<CpuAssociation, HwmonDriverInfo> {
          let mut hwmon_devices = HashMap::new();
          let num_of_cpus = self.topology.package_count();
@@ -306,7 +535,7 @@ index f3b0132..2c8b580 100644
          if cpu_freqs.is_empty() {
              // should warn for multi-cpus, but info otherwise
              let lvl = if num_of_cpus > 1 {
-@@ -750,6 +759,31 @@ impl CpuRepo {
+@@ -750,6 +769,32 @@ impl CpuRepo {
          })
      }
  
@@ -324,9 +553,10 @@ index f3b0132..2c8b580 100644
 +            return None;
 +        }
 +        let mut cpu_freqs = self.collect_freq(CPUINFO_PATH.as_ref()).await;
-+        let channels = self
++        let mut channels = self
 +            .init_socket_channels(apple_silicon::PACKAGE, &mut cpu_freqs)
 +            .await;
++        channels.extend(apple_silicon::cluster_channels(&self.cluster_freqs.borrow()));
 +        Some(HwmonDriverInfo {
 +            name: apple_silicon::DRIVER_NAME.to_owned(),
 +            path: PathBuf::from(apple_silicon::CPU_SYSFS_PATH),
@@ -338,7 +568,7 @@ index f3b0132..2c8b580 100644
      /// Seeds a processor's energy counter with a real reading, which `request_status` needs
      /// before it can take a delta. A failed initial read seeds 0, so the next good read still
      /// produces a valid forward delta.
-@@ -793,7 +827,12 @@ impl Repository for CpuRepo {
+@@ -793,7 +838,12 @@ impl Repository for CpuRepo {
          let potential_cpu_paths = Self::get_potential_cpu_paths().await;
  
          let num_of_cpus = self.topology.package_count();
@@ -352,7 +582,7 @@ index f3b0132..2c8b580 100644
          if hwmon_devices.is_empty() {
              info!("No CPU specific HWMON devices found.");
          } else {
-@@ -812,7 +851,7 @@ impl Repository for CpuRepo {
+@@ -812,7 +862,7 @@ impl Repository for CpuRepo {
              }
          }
  
@@ -361,7 +591,33 @@ index f3b0132..2c8b580 100644
          // A zone-keyed device has no cpuinfo entry of its own. The name has to be resolved the
          // same way it was when the device was built, or every such device would be dropped here.
          for (association, driver) in hwmon_devices {
-@@ -940,7 +979,7 @@ impl Repository for CpuRepo {
+@@ -877,11 +927,20 @@ impl Repository for CpuRepo {
+                     channels: channel_infos,
+                     temps: temp_infos,
+                     temp_max: 100,
+-                    driver_info: DriverInfo {
+-                        drv_type: DriverType::Kernel,
+-                        name: devices::get_device_driver_name(&driver.path).await,
+-                        version: sysinfo::System::kernel_version(),
+-                        locations: Self::get_driver_locations(&driver.path).await,
++                    driver_info: if driver.name == apple_silicon::DRIVER_NAME {
++                        DriverInfo {
++                            drv_type: DriverType::Kernel,
++                            name: apple_silicon::scaling_driver().await,
++                            version: sysinfo::System::kernel_version(),
++                            locations: vec![driver.path.display().to_string()],
++                        }
++                    } else {
++                        DriverInfo {
++                            drv_type: DriverType::Kernel,
++                            name: devices::get_device_driver_name(&driver.path).await,
++                            version: sysinfo::System::kernel_version(),
++                            locations: Self::get_driver_locations(&driver.path).await,
++                        }
+                     },
+                     ..Default::default()
+                 },
+@@ -940,7 +999,7 @@ impl Repository for CpuRepo {
  
      async fn preload_statuses(self: Rc<Self>) {
          let start_update = Instant::now();
