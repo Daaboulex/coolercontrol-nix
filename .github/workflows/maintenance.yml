@@ -61,6 +61,9 @@ jobs:
       - name: Update flake.lock
         run: nix flake update
 
+      - name: Run the flake's after-lock-update app
+        run: bash scripts/after-lock-update.sh
+
       # Probe the temporary fixes against the UPDATED inputs, before the
       # verification build. Probing the committed lock instead would read a fix
       # needed only on the NEW nixpkgs as healed, drop it, and re-break on the
