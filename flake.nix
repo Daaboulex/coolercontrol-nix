@@ -25,17 +25,17 @@
       # Upstream version, source, and per-language dependency hashes.
       # scripts/update.sh bumps these in place on each new GitLab tag
       # (.github/update.json names them: hash, npmDepsHash, cargoHash).
-      version = "5.0.1";
+      version = "5.1.1";
       mkSrc =
         p:
         p.fetchFromGitLab {
           owner = "coolercontrol";
           repo = "coolercontrol";
           rev = version;
-          hash = "sha256-48hgLZ1tyojGJFsz9ZQKC03QMrUAFuH33Z/LOXYl/aI=";
+          hash = "sha256-XlMlu39tboZN/9qVIORv5yobbHXkxNzyNqxQl0wc8Ro=";
         };
-      npmDepsHash = "sha256-7yYI4tAoCeZvm4x5BGUN/bnDExKqxrM9VOD+tO1C6Hc=";
-      cargoHash = "sha256-tbGNVyYrTRmxOqVM7mjNgwZXXcUY205mKuFjrptr+m4=";
+      npmDepsHash = "sha256-hVbvYrPcqvoOGB6QTNISGbFYErLCo2MIKy+AwJLpbcc=";
+      cargoHash = "sha256-AyO5XgIicG9zs9RXg6JgrIvqgq7f7LGSWVUk9BCa7EM=";
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
@@ -83,14 +83,6 @@
           src = mkSrc pkgs;
         in
         {
-          # A unified diff's context lines are byte-exact; a formatter that trims
-          # them silently breaks the patch, so the fixers leave .patch alone.
-          pre-commit.settings.hooks = {
-            trim-trailing-whitespace.excludes = [ "\\.patch$" ];
-            end-of-file-fixer.excludes = [ "\\.patch$" ];
-            typos.excludes = [ "\\.patch$" ];
-          };
-
           packages.coolercontrol-ui-data = pkgs.callPackage ./coolercontrol-ui-data.nix {
             inherit version src npmDepsHash;
           };
@@ -116,11 +108,6 @@
               touch "$out"
             '';
 
-          # patches/i2c-client-identity.patch is a divergence from upstream, so it
-          # carries its own retirement. Upstream's identity file names i2c nowhere
-          # today; the moment it does, upstream is handling this itself and the
-          # patch is reviewed and dropped. The patch's own application is the other
-          # half: it fails the build outright if the code it edits moves.
           # The daemon reaches libdrm through libdrm_amdgpu_sys, which dlopens
           # libdrm_amdgpu.so.1, so nothing links it and buildInputs alone leaves
           # it unresolvable: AMD detection degrades and an RDNA3/4 card is never
@@ -176,64 +163,6 @@
                 touch "$out"
               '';
 
-          checks.i2c-patch-still-needed = pkgs.runCommand "i2c-patch-still-needed" { inherit src; } ''
-            file="$src/coolercontrold/daemon/src/repositories/hwmon/devices.rs"
-            if grep -qi i2c "$file"; then
-              echo "Upstream's device identity now names i2c:"
-              grep -in i2c "$file" | head -5
-              echo ""
-              echo "The local divergence may be redundant. Verify that an i2c client's"
-              echo "identity no longer carries the kernel-assigned bus number, then delete"
-              echo "patches/i2c-client-identity.patch, its entry in coolercontrold.nix, and"
-              echo "this check."
-              exit 1
-            fi
-            touch "$out"
-          '';
-          checks.macsmc-patch-still-needed = pkgs.runCommand "macsmc-patch-still-needed" { inherit src; } ''
-            file="$src/coolercontrold/daemon/src/repositories/hwmon/devices.rs"
-            if grep -q '"macsmc_hwmon"' "$file"; then
-              echo "Upstream now matches the kernel's macsmc_hwmon device name:"
-              grep -n macsmc "$file" | head -5
-              echo ""
-              echo "The Apple Silicon fan fix may have landed. Verify that detection needs no"
-              echo "fanN_manual, that 0% writes 0 to fanN_target, and that shutdown hands a"
-              echo "macsmc_hwmon fan back to the firmware, then delete"
-              echo "patches/macsmc-hwmon-fan-control.patch, its entry in coolercontrold.nix,"
-              echo "and this check."
-              exit 1
-            fi
-            touch "$out"
-          '';
-          checks.apple-silicon-cpu-patch-still-needed =
-            pkgs.runCommand "apple-silicon-cpu-patch-still-needed" { inherit src; }
-              ''
-                dir="$src/coolercontrold/daemon/src/repositories/cpu"
-                if grep -rq -e devicetree -e arm-platform "$dir"; then
-                  echo "Upstream's CPU repository now reads the device tree:"
-                  grep -rn -e devicetree -e arm-platform "$dir" | head -5
-                  echo ""
-                  echo "Apple Silicon may have its CPU device upstream. Verify that the daemon"
-                  echo "starts on an Apple Silicon Mac with no CPU repository error and shows CPU"
-                  echo "load and frequency, then delete patches/apple-silicon-cpu-device.patch,"
-                  echo "its entry in coolercontrold.nix, and this check."
-                  exit 1
-                fi
-                touch "$out"
-              '';
-          checks.tas2764-patch-still-needed = pkgs.runCommand "tas2764-patch-still-needed" { inherit src; } ''
-            file="$src/coolercontrold/daemon/src/repositories/hwmon/temps.rs"
-            if grep -qi tas2764 "$file"; then
-              echo "Upstream's temperature reader now names the TAS2764:"
-              grep -in tas2764 "$file" | head -5
-              echo ""
-              echo "Verify that a TAS2764 answering ENODATA after a resume reads as no failure"
-              echo "and is kept at detection, then delete patches/tas2764-unsampled-temp.patch,"
-              echo "its entry in coolercontrold.nix, and this check."
-              exit 1
-            fi
-            touch "$out"
-          '';
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;

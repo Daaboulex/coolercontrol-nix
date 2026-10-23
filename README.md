@@ -326,15 +326,17 @@ ASUS boards may also need:
 boot.kernelParams = [ "acpi_enforce_resources=lax" ];
 ```
 
-## NixOS-Specific Patches
+## NixOS-Specific Build Settings
+
+The daemon builds from upstream's source with no source patches.
 
 ### PCI ID database
 
-The daemon's inline `pci_ids` module hardcodes Linux FHS paths for `pci.ids`. This flake patches the `@hwdata@` placeholder at build time with the Nix store path to `hwdata`.
+The package sets `HWDATA_PKGDATADIR` to hwdata's store path, which upstream's `daemon/build.rs` bakes into the binary as the place to read `pci.ids`.
 
 ### Configuration directory
 
-The systemd unit sets `CC_CONFIG_DIR=/var/lib/coolercontrol` so the daemon works with `ProtectSystem=strict` (can't write to `/etc`). All config, plugins, TLS certs, and sessions are stored there.
+The installed systemd unit gains `Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"` (a `substituteInPlace --replace-fail`, so a unit without a `[Service]` section fails the build) so the daemon works with `ProtectSystem=strict` (can't write to `/etc`). All config, plugins, TLS certs, and sessions are stored there.
 
 ## Version Tracking
 
