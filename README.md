@@ -359,7 +359,6 @@ coolercontrol-nix/
 ├── hm-module.nix              # Home Manager module (declarative API config)
 ├── export-config.sh           # Export daemon state as Nix attrset
 ├── coolerctl/                 # coolerctl CLI (Python, wraps REST API)
-├── scripts/update.sh          # Standardized auto-update script
 ├── .github/update.json        # Update configuration (upstream, hashes, verify)
 ├── README.md
 ├── LICENSE

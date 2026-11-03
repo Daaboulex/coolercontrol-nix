@@ -23,7 +23,7 @@
     inputs@{ flake-parts, self, ... }:
     let
       # Upstream version, source, and per-language dependency hashes.
-      # scripts/update.sh bumps these in place on each new GitLab tag
+      # The standard's package-update workflow bumps these on each new GitLab tag
       # (.github/update.json names them: hash, npmDepsHash, cargoHash).
       version = "5.1.1";
       mkSrc =
