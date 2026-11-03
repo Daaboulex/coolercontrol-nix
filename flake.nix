@@ -163,6 +163,31 @@
                 touch "$out"
               '';
 
+          checks.qwebchannel-patch-still-needed =
+            pkgs.runCommand "qwebchannel-patch-still-needed" { inherit src; }
+              ''
+                store="$src/coolercontrol-ui/src/stores/DeviceStore.ts"
+                stale=""
+                if grep -rn QWebEngineUrlScheme "$src/coolercontrol"; then
+                  echo "Upstream's desktop app now registers a URL scheme."
+                  stale=1
+                fi
+                if ! grep -q 'qrc:///qtwebchannel/qwebchannel.js' "$store"; then
+                  echo "DeviceStore.ts no longer loads qwebchannel.js from qrc."
+                  stale=1
+                fi
+                if [ -n "$stale" ]; then
+                  echo ""
+                  echo "The Qt WebEngine 6.140 qrc fix may have landed. Verify that with Start in"
+                  echo "tray on the app logs \"Initialized closed to system tray.\" and no \"Not"
+                  echo "allowed to load local resource\", then delete"
+                  echo "patches/qwebchannel-qrc-scheme.patch, its entry in coolercontrol-gui.nix,"
+                  echo "and this check."
+                  exit 1
+                fi
+                touch "$out"
+              '';
+
           checks.module-eval-nixos = inputs.std.lib.nixosModuleCheck {
             inherit (inputs) nixpkgs;
             inherit system;

@@ -12,6 +12,10 @@ stdenv.mkDerivation {
   inherit version src;
   sourceRoot = "${src.name}/coolercontrol";
 
+  patches = lib.optionals (lib.versionAtLeast qt6.qtwebengine.version "6.140") [
+    ./patches/qwebchannel-qrc-scheme.patch
+  ];
+
   nativeBuildInputs = [
     cmake
     qt6.wrapQtAppsHook

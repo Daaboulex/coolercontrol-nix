@@ -1,0 +1,44 @@
+fix(qt): load qwebchannel.js again on Qt WebEngine 6.140
+
+Qt WebEngine 6.140 made qrc a local scheme (qtwebengine 8e460f8089b9,
+"Make 'qrc' a local scheme", QTBUG-148477), so a page from a remote
+scheme can no longer load qrc resources. The UI is served by the daemon
+over https and loads qrc:///qtwebchannel/qwebchannel.js, which is now
+refused. window.ipc is never set and loadFinished is never sent. With
+Start in tray on, the window keeps WA_DontShowOnScreen for good, and
+the tray, a second launch and showInstance all show a window that is
+never drawn. Every other call from the UI to the app fails the same way,
+so settings such as Start in tray and the zoom cannot load or save.
+
+qrc is registered before QApplication as a secure, CORS-enabled scheme,
+the part of Qt's documented 6.140 restore that a script loaded by an
+https page needs. LocalAccessAllowed only widens what a qrc document may
+load, and the app renders none.
+
+Measured on a J316c MacBook Pro (M1 Max) and a Ryzen 9 9950X3D, Qt
+6.12.0 with Qt WebEngine 6.140.0-rc. Unpatched: "Not allowed to load
+local resource: qrc:///qtwebchannel/qwebchannel.js", and neither
+"Initialized closed to system tray." nor "Initialized open window." is
+ever logged. Patched: the script loads and the matching line is logged
+about a second after the UI.
+
+--- a/main.cpp
++++ b/main.cpp
+@@ -10,6 +10,7 @@
+ #include <QLoggingCategory>
+ #include <QStandardPaths>
+ #include <QTranslator>
++#include <QWebEngineUrlScheme>
+ #include <optional>
+
+ #include "connections.h"
+@@ -131,6 +132,9 @@
+   // Standard Qt Paths:
+   // https://doc.qt.io/qt-6/qstandardpaths.html
+   // settings: ~/.config/{app_id}/{app_id}.conf
++  QWebEngineUrlScheme qrcScheme("qrc");
++  qrcScheme.setFlags(QWebEngineUrlScheme::SecureScheme | QWebEngineUrlScheme::CorsEnabled);
++  QWebEngineUrlScheme::registerScheme(qrcScheme);
+   const QApplication a(argc, argv);
+
+   // Qt supplies its own strings for standard dialog buttons (Cancel, Back, Next, OK).

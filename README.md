@@ -338,6 +338,10 @@ The package sets `HWDATA_PKGDATADIR` to hwdata's store path, which upstream's `d
 
 The installed systemd unit gains `Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"` (a `substituteInPlace --replace-fail`, so a unit without a `[Service]` section fails the build) so the daemon works with `ProtectSystem=strict` (can't write to `/etc`). All config, plugins, TLS certs, and sessions are stored there.
 
+### Desktop app on Qt WebEngine 6.140
+
+Qt WebEngine 6.140 made `qrc` a local scheme, so the UI, served by the daemon over https, can no longer load `qrc:///qtwebchannel/qwebchannel.js`. Without it no call between the UI and the app works: settings such as Start in tray and the zoom neither load nor save, and with Start in tray on the window is never drawn. On Qt WebEngine 6.140 or newer the app carries [`patches/qwebchannel-qrc-scheme.patch`](patches/qwebchannel-qrc-scheme.patch), which registers `qrc` as a secure, CORS-enabled scheme, the part of Qt's documented restore that this script load needs. On older Qt it builds unpatched. The check `qwebchannel-patch-still-needed` fails once upstream registers a scheme or loads the script another way, which is the signal to verify and drop the patch.
+
 ## Version Tracking
 
 GitHub Actions workflows automatically update to new upstream releases daily (06:00 UTC). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
@@ -350,6 +354,7 @@ coolercontrol-nix/
 ├── coolercontrold.nix         # Rust daemon package
 ├── coolercontrol-ui-data.nix  # Vue web UI build
 ├── coolercontrol-gui.nix      # Qt6 desktop app package
+├── patches/                   # Source patches, each with a still-needed check in flake.nix
 ├── module.nix                 # NixOS module (alternative to nixpkgs module)
 ├── hm-module.nix              # Home Manager module (declarative API config)
 ├── export-config.sh           # Export daemon state as Nix attrset
