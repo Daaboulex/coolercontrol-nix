@@ -1,379 +1,139 @@
-# coolercontrol-nix
+# CoolerControl for NixOS
 
-<!-- BEGIN generated:badges -->
-[![CI](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/coolercontrol-nix/actions/workflows/ci.yml)
-[![NixOS unstable](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](./LICENSE)
-<!-- END generated:badges -->
+[CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) monitors and
+controls your cooling devices (fans, pumps, AIOs) with a web UI and a desktop
+app. This flake builds it from source for NixOS: the Rust daemon, the Vue web
+UI and the Qt6 desktop app. It is for anyone who wants up-to-date CoolerControl
+packages on NixOS, with fan curves declared in Home Manager if you like.
 
-NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol): monitor and control your cooling devices (fans, pumps, AIOs) with a web UI and desktop app.
+The flake targets `x86_64-linux` and `aarch64-linux`. The desktop app's fix for
+Qt WebEngine 6.140 was measured on an Apple M1 Max and a Ryzen 9 9950X3D. Which
+coolers and boards work is not recorded here.
 
-This flake packages CoolerControl from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access. The tracked upstream version lives in [`flake.nix`](flake.nix).
+## What you get
 
-<!-- BEGIN generated:upstream -->
-## Upstream
+- `overlays.default` puts the packages under `pkgs.coolercontrol`, where the
+  `programs.coolercontrol` module that nixpkgs ships reads them.
+- `nixosModules.default` replaces the nixpkgs module and adds a few options.
+- `homeModules.default` applies declared fan curves and settings at login.
+- `coolerctl` is a command line tool for the daemon's REST API.
 
-| | |
-|---|---|
-| **Project** | [coolercontrol/coolercontrol](https://gitlab.com/coolercontrol/coolercontrol) |
-| **License** | GPL-3.0-or-later |
-| **Tracked** | GitLab tags |
+## Install
 
-<!-- END generated:upstream -->
-
-## What Is This?
-
-A Nix flake that builds the full CoolerControl stack from source:
-
-- **Two NixOS module paths**: use nixpkgs' `programs.coolercontrol` with this flake's overlay (recommended), or this flake's own `nixosModules.default`
-- **Home Manager module** — declarative profiles, modes, functions, alerts, and settings applied via REST API on login (`coolercontrol-apply.service`)
-- **`coolerctl` CLI** — Python wrapper around the daemon's REST API (auth, status, profiles, export-config)
-
-## Quick Start
-
-### 1. Add flake input
+Add the flake:
 
 ```nix
-# flake.nix
-inputs.coolercontrol = {
-  url = "github:daaboulex/coolercontrol-nix";
-  inputs.nixpkgs.follows = "nixpkgs";
-};
+{
+  inputs.coolercontrol = {
+    url = "github:Daaboulex/coolercontrol-nix";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+}
 ```
 
-### 2. Stack the overlay
+Then stack the overlay and switch CoolerControl on. nixpkgs already ships a
+`programs.coolercontrol` module, and the overlay gives it up-to-date packages.
 
 ```nix
-nixpkgs.overlays = [
-  inputs.coolercontrol.overlays.default
-];
+{
+  nixpkgs.overlays = [ inputs.coolercontrol.overlays.default ];
+  programs.coolercontrol.enable = true;
+}
 ```
 
-### 3. Enable CoolerControl
+Rebuild with `sudo nixos-rebuild switch`. The daemon starts on its own.
 
-nixpkgs already ships a `programs.coolercontrol` NixOS module. With the overlay providing up-to-date packages, just enable it:
+To use this flake's module instead, also import
+`inputs.coolercontrol.nixosModules.default`. Keep the overlay: the module's
+default `coolerctl` package exists only there.
 
-```nix
-programs.coolercontrol.enable = true;
-```
-
-> **Alternative**: If you prefer to use this flake's NixOS module instead of nixpkgs', import `inputs.coolercontrol.nixosModules.default` and keep step 2. The module's default `coolerctl` package exists only in the overlay.
-
-With this flake's NixOS module, a configuration file can be seeded once:
-
-```nix
-programs.coolercontrol.configFile = ./config.toml;
-```
-
-It is copied into `/var/lib/coolercontrol/` on a machine where the daemon has not written its own `config.toml` yet. The daemon owns the file from then on; a change here reaches only a machine that has none.
-
-### 4. (Optional) Add the Home Manager module
-
-For declarative profiles, modes, functions, alerts, and settings:
-
-```nix
-home-manager.sharedModules = [
-  inputs.coolercontrol.homeModules.default
-];
-```
-
-### 5. Rebuild
-
-```bash
-sudo nixos-rebuild switch
-```
-
-## Post-Install Setup
-
-### First run
-
-After rebuilding, the daemon starts automatically. Verify:
+## First run
 
 ```bash
 systemctl status coolercontrold
 journalctl -u coolercontrold -f
 ```
 
-The web UI is at `https://localhost:11987` (TLS with self-signed cert). Launch the desktop app with `coolercontrol`.
+The web UI is at `https://localhost:11987`, over TLS with a self-signed
+certificate. Start the desktop app with `coolercontrol`.
 
-### Authentication
-
-The daemon starts with a default password (`coolAdmin`). To set your own:
+The daemon starts with a default password, `coolAdmin`. Set your own, then save
+a bearer token for `coolerctl` and the Home Manager module:
 
 ```bash
 coolerctl auth set-password
-# Current password: coolAdmin
-# New password: <your password>
-```
-
-Then save a bearer token for CLI and Home Manager use:
-
-```bash
 coolerctl auth login
-# Password: <your password>
-# Token saved to ~/.config/coolerctl/token
 ```
 
-The Home Manager apply service reads this token automatically. **You must run `coolerctl auth login` after every password change.**
+The token is saved to `~/.config/coolerctl/token`. Run `coolerctl auth login`
+again after every password change.
 
-### Configuration directory
+## Command line
 
-The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/var/lib/coolercontrol/` (set via `CC_CONFIG_DIR` in the systemd unit). With this flake's NixOS module ([`module.nix`](module.nix)), systemd manages this path as the unit's `StateDirectory`.
+This flake's module installs `coolerctl`. With the nixpkgs module, add
+`pkgs.coolercontrol.coolerctl` to `environment.systemPackages` or `home.packages`.
 
-> **Migrating from an older version**: If you previously ran CoolerControl without this flake, your config may be at `/etc/coolercontrol/`. Copy it over:
->
-> ```bash
-> sudo systemctl stop coolercontrold
-> sudo cp -a /etc/coolercontrol/* /var/lib/coolercontrol/
-> sudo systemctl start coolercontrold
-> ```
+| Command | What it shows |
+|---|---|
+| `coolerctl status` | System overview |
+| `coolerctl fans`, `coolerctl temps` | Fan speeds, temperatures |
+| `coolerctl profiles list` | Profiles, and likewise `functions list` and `modes list` |
+| `coolerctl auth status` | Whether a token is configured |
+| `coolerctl export-config` | The current configuration as Nix, for Home Manager |
 
-## Components
-
-| Component | Technology | Description |
-|---|---|---|
-| `coolercontrold` | Rust | System daemon — hardware detection, fan/pump control, web UI server |
-| `coolercontrol-ui` | Vue 3 / Vite | Web UI embedded in the daemon (`https://localhost:11987`) |
-| `coolercontrol` (GUI) | C++ / Qt6 WebEngine | Desktop app wrapping the web UI |
-| `coolerctl` | Python | CLI wrapping the daemon's REST API |
-
-## CLI usage
-
-The `coolerctl` CLI wraps the daemon's REST API. It ships as `pkgs.coolercontrol.coolerctl` (via the overlay) — add it to `environment.systemPackages` or `home.packages` to use it.
-
-```bash
-# Authentication
-coolerctl auth login              # Save bearer token
-coolerctl auth set-password       # Change daemon password
-coolerctl auth status             # Check if token is configured
-
-# Quick status
-coolerctl status                  # System overview
-coolerctl fans                    # Fan speeds
-coolerctl temps                   # Temperatures
-
-# Profiles & functions
-coolerctl profiles list
-coolerctl functions list
-coolerctl modes list
-
-# Export current config as Nix (for Home Manager)
-coolerctl export-config
-```
-
-## Home Manager Module
-
-Declaratively configure CoolerControl profiles, functions, modes, alerts, and settings. The daemon runs as a NixOS system service — this module applies state via the REST API on login.
-
-### How it works
-
-1. You declare profiles/functions/modes/settings in Nix
-2. On login, a systemd user service (`coolercontrol-apply.service`) sends them to the daemon via REST API
-3. The daemon persists changes to `/var/lib/coolercontrol/`
-
-**Prerequisites**:
-
-- The daemon must be running (`programs.coolercontrol.enable = true`)
-- A bearer token must exist at `~/.config/coolerctl/token` (run `coolerctl auth login`)
-
-### Debugging the apply service
-
-```bash
-# Check status
-systemctl --user status coolercontrol-apply
-
-# View logs (shows exact HTTP errors with status codes)
-journalctl --user -u coolercontrol-apply -e
-
-# Manually re-apply after fixing config
-systemctl --user restart coolercontrol-apply
-```
-
-Common errors:
-
-- **HTTP 401 "Invalid Credentials"**: Run `coolerctl auth login` to refresh the token
-- **HTTP 400 "duty_minimum must be greater than 0"**: `duty_minimum` must be >= 1
-- **HTTP 422 "missing field X"**: A required field was not provided (check the example below)
-- **"Daemon not reachable after 30s"**: The daemon isn't running — check `systemctl status coolercontrold`
-
-### Example configuration
+## Fan curves in Home Manager
 
 ```nix
-# home.nix (or any Home Manager module)
 {
-  programs.coolercontrol = {
-    enable = true;
-
-    profiles = {
-      default-profile = {
-        uid = "0";
-        name = "Default Profile";
-        p_type = "Default";
-        extra = {
-          function_uid = "0";  # Required
-        };
-      };
-      my-profile = {
-        uid = "abc123";  # from coolerctl profiles list
-        name = "Silent";
-        p_type = "Graph";
-        speed_profile = [
-          { temp = 30; duty = 25; }
-          { temp = 50; duty = 40; }
-          { temp = 70; duty = 70; }
-          { temp = 85; duty = 100; }
-        ];
-        extra = {
-          function_uid = "def456";
-        };
-      };
-    };
-
-    functions = {
-      default-function = {
-        uid = "0";
-        name = "Default Function";
-        duty_minimum = 1;   # Must be >= 1
-        duty_maximum = 100;
-      };
-      my-function = {
-        uid = "def456";
-        name = "Smooth Response";
-        duty_minimum = 2;
-        duty_maximum = 100;
-        response_delay = 3;
-        deviance = 2.0;
-        only_downward = false;
-        sample_window = 6;
-      };
-    };
-
-    modes = {
-      default = {
-        uid = "jkl012";
-        name = "Default Mode";
-        device_settings = {
-          "<device-uid>" = {
-            "fan1" = { profile_uid = "abc123"; };
-          };
-        };
-      };
-    };
-
-    # Activate a mode on login
-    activeMode = "jkl012";
-
-    # Global daemon settings
-    settings = {
-      apply_on_boot = true;
-      no_init = false;
-      startup_delay = 2;
-      thinkpad_full_speed = false;
-      handle_dynamic_temps = false;
-      liquidctl_integration = true;
-      hide_duplicate_devices = true;
-      compress = true;
-      poll_rate = 1.0;
-      drivetemp_suspend = true;
-      allow_unencrypted = false;
-    };
-  };
+  home-manager.sharedModules = [ inputs.coolercontrol.homeModules.default ];
 }
 ```
 
-### Exporting current config
+A user service, `coolercontrol-apply.service`, sends what you declare to the
+daemon at login. It needs the daemon running and the saved token. A full
+example is in [docs/HOME-MANAGER.md](docs/HOME-MANAGER.md).
 
-Use `coolerctl export-config` to snapshot the daemon's current state as a Nix attrset. Copy the output directly into your Home Manager configuration.
+## Options you are likely to set
 
-### API requirements
+| Option | Module | What it is for |
+|---|---|---|
+| `configFile` | this flake's NixOS module | A `config.toml` copied into `/var/lib/coolercontrol/` once |
+| `cli.enable` | this flake's NixOS module | Install `coolerctl`, on by default |
+| `profiles`, `functions`, `modes` | Home Manager | The fan curves, functions and modes to apply |
+| `activeMode` | Home Manager | The mode to activate at login |
+| `settings` | Home Manager | Global daemon settings |
 
-The daemon's API requires:
+All sit under `programs.coolercontrol`. Every option, with its type and
+default: [docs/OPTIONS.md](docs/OPTIONS.md).
 
-| Field | Requirement |
-|---|---|
-| `function_uid` | Required on profiles (use `extra.function_uid`) |
-| `duty_minimum` | Must be >= 1 |
-| `member_profile_uids` | Required on Mix and Overlay profiles (the module sends `[]` when unset) |
-| `f_type` | Required on functions (defaults to `"Identity"`) |
-| Bearer token | Required for write operations when password is set |
+## Known limits
 
-## Hardware Support
+- `configFile` only seeds a machine whose daemon has no `config.toml` yet.
+- The Home Manager module needs a saved token, renewed after a password change.
+- `duty_minimum` on a function must be at least 1.
+- Motherboard fan headers need a Super I/O kernel module. Which one is in
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-CoolerControl detects and controls devices through:
-
-- **hwmon** — kernel hardware monitoring (CPU/GPU temps, fan speeds, PWM control)
-- **liquidctl** — USB liquid coolers, fan controllers (Corsair, NZXT, EVGA, etc.)
-- **libdrm** — AMD GPU temperature and fan control
-- **NVML** — NVIDIA GPU monitoring (auto-loaded via `addDriverRunpath`)
-
-### Kernel modules for motherboard fan control
-
-Motherboard fan headers require the appropriate Super I/O kernel module:
-
-```nix
-# Nuvoton (most ASUS, MSI, Gigabyte boards)
-boot.kernelModules = [ "nct6775" ];
-
-# ITE (some Gigabyte, ASRock boards)
-boot.kernelModules = [ "it87" ];
-```
-
-ASUS boards may also need:
-
-```nix
-boot.kernelParams = [ "acpi_enforce_resources=lax" ];
-```
-
-## NixOS-Specific Build Settings
-
-The daemon builds from upstream's source with no source patches.
-
-### PCI ID database
-
-The package sets `HWDATA_PKGDATADIR` to hwdata's store path, which upstream's `daemon/build.rs` bakes into the binary as the place to read `pci.ids`.
-
-### Configuration directory
-
-The installed systemd unit gains `Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"` (a `substituteInPlace --replace-fail`, so a unit without a `[Service]` section fails the build). All config, plugins, TLS certs, and sessions are stored there.
-
-### Desktop app on Qt WebEngine 6.140
-
-Qt WebEngine 6.140 made `qrc` a local scheme, so the UI, served by the daemon over https, can no longer load `qrc:///qtwebchannel/qwebchannel.js`. Without it no call between the UI and the app works: settings such as Start in tray and the zoom neither load nor save, and with Start in tray on the window is never drawn. On Qt WebEngine 6.140 or newer the app carries [`patches/qwebchannel-qrc-scheme.patch`](patches/qwebchannel-qrc-scheme.patch), which registers `qrc` as a secure, CORS-enabled scheme, the part of Qt's documented restore that this script load needs. On older Qt it builds unpatched. The check `qwebchannel-patch-still-needed` fails once upstream registers a scheme or loads the script another way, which is the signal to verify and drop the patch.
-
-## Repository Structure
-
-The packages, the overlay, both modules and the checks are wired together in [`flake.nix`](flake.nix).
-
-## Credits
-
-- [Guy Boldon (codifryed)](https://gitlab.com/codifryed) — CoolerControl developer
-- [NixOS/nixpkgs coolercontrol package](https://github.com/NixOS/nixpkgs/tree/master/pkgs/applications/system/coolercontrol) — reference packaging
-
-## Development
+## When something does not work
 
 ```bash
-git clone https://github.com/Daaboulex/coolercontrol-nix
-cd coolercontrol-nix
-nix develop                       # enter dev shell, installs pre-commit hooks
-nix fmt                           # format flake + module + hm-module
-nix flake check --no-build        # eval check
-nix build .#coolercontrol-gui     # build full GUI desktop app
-nix build .#coolercontrol-ui-data # build Vue web UI bundle
-nix build .#coolercontrold        # build daemon only
-./result/bin/coolercontrold --help
+systemctl --user status coolercontrol-apply
+journalctl --user -u coolercontrol-apply -e
+systemctl --user restart coolercontrol-apply
 ```
 
-<!-- BEGIN generated:options -->
-## Options
+The log shows the exact HTTP error. A 401 means the token is stale, so run
+`coolerctl auth login`. "CoolerControl daemon not reachable after 30s" means
+the daemon is not running, so check `systemctl status coolercontrold`. The
+other errors are listed in [docs/HOME-MANAGER.md](docs/HOME-MANAGER.md).
 
-NixOS module: `programs.coolercontrol.*` (see [`module.nix`](module.nix))
+## More
 
-Home Manager module: `programs.coolercontrol.*` (see [`hm-module.nix`](hm-module.nix))
-<!-- END generated:options -->
+- [docs/HOME-MANAGER.md](docs/HOME-MANAGER.md): a full example, the API's rules
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md): hardware, kernel modules, migration
+- [docs/DESIGN.md](docs/DESIGN.md): the two module paths, build settings, credits
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): building, the checks, updates
 
 ## License
 
 [`LICENSE`](LICENSE) holds the GNU General Public License version 3, and the `meta.license` of each of the four packages (`coolercontrold`, `coolercontrol-ui-data`, `coolercontrol-gui`, `coolerctl`) declares `gpl3Plus`, which is GPL-3.0-or-later. Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
-
-<!-- BEGIN generated:footer -->
-<!-- END generated:footer -->

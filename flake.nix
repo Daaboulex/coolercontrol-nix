@@ -43,7 +43,15 @@
         "aarch64-linux"
       ];
 
-      imports = [ inputs.std.flakeModules.base ];
+      imports = [
+        inputs.std.flakeModules.base
+        {
+          perSystem.std.option-reference = {
+            "NixOS module" = ./module.nix;
+            "Home Manager module" = ./hm-module.nix;
+          };
+        }
+      ];
 
       # The overlay nests every output under `pkgs.coolercontrol.*` so it slots
       # into nixpkgs' own `programs.coolercontrol` module (which reads that path).
