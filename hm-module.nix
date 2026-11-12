@@ -245,6 +245,7 @@ let
           lib.types.submodule {
             options = {
               temp_source = lib.mkOption {
+                description = "The temperature sensor this source reads.";
                 type = lib.types.submodule {
                   options = {
                     temp_name = lib.mkOption {
