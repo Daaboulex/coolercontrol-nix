@@ -6,7 +6,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](./LICENSE)
 <!-- END generated:badges -->
 
-NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol) — monitor and control your cooling devices (fans, pumps, AIOs) with a modern web UI and desktop app.
+NixOS packaging for [CoolerControl](https://gitlab.com/coolercontrol/coolercontrol): monitor and control your cooling devices (fans, pumps, AIOs) with a web UI and desktop app.
 
 This flake packages CoolerControl from source (Rust daemon + Vue web UI + Qt6 desktop app) and provides a NixOS module with systemd integration and full hardware access. The tracked upstream version lives in [`flake.nix`](flake.nix).
 
@@ -23,11 +23,9 @@ This flake packages CoolerControl from source (Rust daemon + Vue web UI + Qt6 de
 
 ## What Is This?
 
-A Nix flake that builds the full CoolerControl stack from source with full CI infrastructure:
+A Nix flake that builds the full CoolerControl stack from source:
 
-- **Daily upstream tracking** (06:00 UTC) — new GitLab tags land here within a day
-- **Pre-build verification** — fail-closed pipeline (eval → build → ELF check) before any push to `main`
-- **Two NixOS module paths** — use nixpkgs' `programs.coolercontrol` with this flake's overlay (recommended), or this flake's own `nixosModules.default` if you want bleeding-edge module options
+- **Two NixOS module paths**: use nixpkgs' `programs.coolercontrol` with this flake's overlay (recommended), or this flake's own `nixosModules.default`
 - **Home Manager module** — declarative profiles, modes, functions, alerts, and settings applied via REST API on login (`coolercontrol-apply.service`)
 - **`coolerctl` CLI** — Python wrapper around the daemon's REST API (auth, status, profiles, export-config)
 
@@ -59,7 +57,7 @@ nixpkgs already ships a `programs.coolercontrol` NixOS module. With the overlay 
 programs.coolercontrol.enable = true;
 ```
 
-> **Alternative**: If you prefer to use this flake's NixOS module instead of nixpkgs', import `inputs.coolercontrol.nixosModules.default` and skip step 2.
+> **Alternative**: If you prefer to use this flake's NixOS module instead of nixpkgs', import `inputs.coolercontrol.nixosModules.default` and keep step 2. The module's default `coolerctl` package exists only in the overlay.
 
 With this flake's NixOS module, a configuration file can be seeded once:
 
@@ -120,7 +118,7 @@ The Home Manager apply service reads this token automatically. **You must run `c
 
 ### Configuration directory
 
-The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/var/lib/coolercontrol/` (set via `CC_CONFIG_DIR` in the systemd unit). This path is managed by systemd's `StateDirectory`.
+The daemon stores config, TLS certs, plugins, modes, alerts, and sessions at `/var/lib/coolercontrol/` (set via `CC_CONFIG_DIR` in the systemd unit). With this flake's NixOS module ([`module.nix`](module.nix)), systemd manages this path as the unit's `StateDirectory`.
 
 > **Migrating from an older version**: If you previously ran CoolerControl without this flake, your config may be at `/etc/coolercontrol/`. Copy it over:
 >
@@ -194,7 +192,7 @@ systemctl --user restart coolercontrol-apply
 Common errors:
 
 - **HTTP 401 "Invalid Credentials"**: Run `coolerctl auth login` to refresh the token
-- **HTTP 400 "duty_minimum must be greater than 0"**: `duty_minimum` must be >= 1 in 4.1.0+
+- **HTTP 400 "duty_minimum must be greater than 0"**: `duty_minimum` must be >= 1
 - **HTTP 422 "missing field X"**: A required field was not provided (check the example below)
 - **"Daemon not reachable after 30s"**: The daemon isn't running — check `systemctl status coolercontrold`
 
@@ -212,7 +210,7 @@ Common errors:
         name = "Default Profile";
         p_type = "Default";
         extra = {
-          function_uid = "0";  # Required in 4.1.0+
+          function_uid = "0";  # Required
         };
       };
       my-profile = {
@@ -235,7 +233,7 @@ Common errors:
       default-function = {
         uid = "0";
         name = "Default Function";
-        duty_minimum = 1;   # Must be >= 1 in 4.1.0+
+        duty_minimum = 1;   # Must be >= 1
         duty_maximum = 100;
       };
       my-function = {
@@ -287,15 +285,15 @@ Common errors:
 
 Use `coolerctl export-config` to snapshot the daemon's current state as a Nix attrset. Copy the output directly into your Home Manager configuration.
 
-### 4.1.0 API requirements
+### API requirements
 
-The 4.1.0 API is stricter than 4.0.x. Key differences:
+The daemon's API requires:
 
 | Field | Requirement |
 |---|---|
 | `function_uid` | Required on profiles (use `extra.function_uid`) |
-| `duty_minimum` | Must be >= 1 (was allowed to be 0) |
-| `member_profile_uids` | Required on profiles (defaults to `[]`) |
+| `duty_minimum` | Must be >= 1 |
+| `member_profile_uids` | Required on Mix and Overlay profiles (the module sends `[]` when unset) |
 | `f_type` | Required on functions (defaults to `"Identity"`) |
 | Bearer token | Required for write operations when password is set |
 
@@ -336,37 +334,15 @@ The package sets `HWDATA_PKGDATADIR` to hwdata's store path, which upstream's `d
 
 ### Configuration directory
 
-The installed systemd unit gains `Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"` (a `substituteInPlace --replace-fail`, so a unit without a `[Service]` section fails the build) so the daemon works with `ProtectSystem=strict` (can't write to `/etc`). All config, plugins, TLS certs, and sessions are stored there.
+The installed systemd unit gains `Environment="CC_CONFIG_DIR=/var/lib/coolercontrol"` (a `substituteInPlace --replace-fail`, so a unit without a `[Service]` section fails the build). All config, plugins, TLS certs, and sessions are stored there.
 
 ### Desktop app on Qt WebEngine 6.140
 
 Qt WebEngine 6.140 made `qrc` a local scheme, so the UI, served by the daemon over https, can no longer load `qrc:///qtwebchannel/qwebchannel.js`. Without it no call between the UI and the app works: settings such as Start in tray and the zoom neither load nor save, and with Start in tray on the window is never drawn. On Qt WebEngine 6.140 or newer the app carries [`patches/qwebchannel-qrc-scheme.patch`](patches/qwebchannel-qrc-scheme.patch), which registers `qrc` as a secure, CORS-enabled scheme, the part of Qt's documented restore that this script load needs. On older Qt it builds unpatched. The check `qwebchannel-patch-still-needed` fails once upstream registers a scheme or loads the script another way, which is the signal to verify and drop the patch.
 
-## Version Tracking
-
-GitHub Actions workflows automatically update to new upstream releases daily (06:00 UTC). Successful updates are pushed directly to main; failures create a GitHub Issue with build logs and recovery steps.
-
 ## Repository Structure
 
-```text
-coolercontrol-nix/
-├── flake.nix                  # Flake definition (packages, overlay, modules)
-├── coolercontrold.nix         # Rust daemon package
-├── coolercontrol-ui-data.nix  # Vue web UI build
-├── coolercontrol-gui.nix      # Qt6 desktop app package
-├── patches/                   # Source patches, each with a still-needed check in flake.nix
-├── module.nix                 # NixOS module (alternative to nixpkgs module)
-├── hm-module.nix              # Home Manager module (declarative API config)
-├── export-config.sh           # Export daemon state as Nix attrset
-├── coolerctl/                 # coolerctl CLI (Python, wraps REST API)
-├── .github/update.json        # Update configuration (upstream, hashes, verify)
-├── README.md
-├── LICENSE
-└── .github/workflows/
-    ├── ci.yml                 # PR/push: eval, format, build, verify
-    ├── update.yml             # Scheduled: detect upstream, update hashes, push or issue
-    └── maintenance.yml        # Weekly: flake.lock update, stale branch cleanup
-```
+The packages, the overlay, both modules and the checks are wired together in [`flake.nix`](flake.nix).
 
 ## Credits
 
@@ -382,12 +358,10 @@ nix develop                       # enter dev shell, installs pre-commit hooks
 nix fmt                           # format flake + module + hm-module
 nix flake check --no-build        # eval check
 nix build .#coolercontrol-gui     # build full GUI desktop app
-nix build .#coolercontrold        # build daemon only
 nix build .#coolercontrol-ui-data # build Vue web UI bundle
+nix build .#coolercontrold        # build daemon only
 ./result/bin/coolercontrold --help
 ```
-
-CI runs the same chain daily via `.github/workflows/update.yml`; manual updates rarely needed.
 
 <!-- BEGIN generated:options -->
 ## Options
@@ -399,7 +373,7 @@ Home Manager module: `programs.coolercontrol.*` (see [`hm-module.nix`](hm-module
 
 ## License
 
-This packaging flake is [GPL-3.0-or-later](./LICENSE) licensed (matches upstream). Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
+[`LICENSE`](LICENSE) holds the GNU General Public License version 3, and the `meta.license` of each of the four packages (`coolercontrold`, `coolercontrol-ui-data`, `coolercontrol-gui`, `coolerctl`) declares `gpl3Plus`, which is GPL-3.0-or-later. Upstream CoolerControl is [GPL-3.0-or-later](https://gitlab.com/coolercontrol/coolercontrol/-/blob/main/LICENSE) by Guy Boldon.
 
 <!-- BEGIN generated:footer -->
 <!-- END generated:footer -->
