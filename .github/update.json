@@ -11,6 +11,9 @@
     "npmDepsHash",
     "cargoHash"
   ],
+  "subpackages": [
+    "ui"
+  ],
   "verify": {
     "binary": null,
     "args": null,
