@@ -93,24 +93,6 @@ RUNPATH stops providing them.
 NVIDIA's NVML is found through `addDriverRunpath`. liquidctl reaches the daemon
 through the Python path of its wrapper.
 
-### Desktop app on Qt WebEngine 6.140
-
-Qt WebEngine 6.140 made `qrc` a local scheme, so the UI, served by the daemon
-over https, can no longer load `qrc:///qtwebchannel/qwebchannel.js`. Without it
-no call between the UI and the app works: settings such as Start in tray and
-the zoom neither load nor save, and with Start in tray on the window is never
-drawn.
-
-On Qt WebEngine 6.140 or newer the app carries
-[`patches/qwebchannel-qrc-scheme.patch`](../patches/qwebchannel-qrc-scheme.patch),
-which registers `qrc` as a secure, CORS-enabled scheme, the part of Qt's
-documented restore that this script load needs. On older Qt it builds
-unpatched.
-
-The check `qwebchannel-patch-still-needed` fails once upstream registers a
-scheme or loads the script another way, which is the signal to verify and drop
-the patch. What was measured is in [COMPATIBILITY.md](COMPATIBILITY.md).
-
 ## Credits
 
 - [Guy Boldon (codifryed)](https://gitlab.com/codifryed), CoolerControl

@@ -36,7 +36,6 @@ The packages, the overlay, both modules and the checks are wired together in
 | [`coolerctl/`](../coolerctl/package.nix) | The CLI and its tests |
 | [`module.nix`](../module.nix) | The NixOS module |
 | [`hm-module.nix`](../hm-module.nix) | The Home Manager module |
-| [`patches/`](../patches/qwebchannel-qrc-scheme.patch) | The desktop app's Qt WebEngine patch |
 
 ## Checks
 
@@ -47,9 +46,6 @@ The packages, the overlay, both modules and the checks are wired together in
   `libdrm_amdgpu.so.1`.
 - `gpu-stress-libraries-resolve` does the same for `libvulkan.so.1` and
   `libEGL.so.1`.
-- `qwebchannel-patch-still-needed` fails once upstream registers a URL scheme
-  or stops loading `qwebchannel.js` from `qrc`, which is the signal to verify
-  and drop the patch.
 - `module-eval-nixos` evaluates the NixOS module with the overlay and
   `programs.coolercontrol.enable = true`.
 - `module-eval-hm` evaluates the Home Manager module with

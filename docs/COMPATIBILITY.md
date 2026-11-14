@@ -45,21 +45,6 @@ ASUS boards may also need:
 }
 ```
 
-## Desktop app on Qt WebEngine 6.140
-
-The fix described in [DESIGN.md](DESIGN.md) was measured on a J316c MacBook Pro
-(M1 Max) and a Ryzen 9 9950X3D, Qt 6.12.0 with Qt WebEngine 6.140.0-rc.
-
-Unpatched, the app logs
-`Not allowed to load local resource: qrc:///qtwebchannel/qwebchannel.js`, and
-neither `Initialized closed to system tray.` nor `Initialized open window.` is
-ever logged. Patched, the script loads and the matching line is logged about a
-second after the UI.
-
-The Qt change behind it is qtwebengine `8e460f8089b9`, "Make 'qrc' a local
-scheme", QTBUG-148477. The full account is the header of
-[`patches/qwebchannel-qrc-scheme.patch`](../patches/qwebchannel-qrc-scheme.patch).
-
 ## Migrating from an older version
 
 If you previously ran CoolerControl without this flake, your config may be at
