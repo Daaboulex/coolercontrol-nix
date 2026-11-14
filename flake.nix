@@ -25,17 +25,17 @@
       # Upstream version, source, and per-language dependency hashes.
       # The standard's package-update workflow bumps these on each new GitLab tag
       # (.github/update.json names them: hash, npmDepsHash, cargoHash).
-      version = "5.1.1";
+      version = "5.1.2";
       mkSrc =
         p:
         p.fetchFromGitLab {
           owner = "coolercontrol";
           repo = "coolercontrol";
           rev = version;
-          hash = "sha256-XlMlu39tboZN/9qVIORv5yobbHXkxNzyNqxQl0wc8Ro=";
+          hash = "sha256-Av0By/DxdBh0n0Og9fho3X8yizpSu2Joe39iM2GyxPg=";
         };
       npmDepsHash = "sha256-hVbvYrPcqvoOGB6QTNISGbFYErLCo2MIKy+AwJLpbcc=";
-      cargoHash = "sha256-AyO5XgIicG9zs9RXg6JgrIvqgq7f7LGSWVUk9BCa7EM=";
+      cargoHash = "sha256-2RJ1ZDQJ+j0sUhGaqEisiA3H3wEiz9l4CEYxzO6ktLg=";
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
